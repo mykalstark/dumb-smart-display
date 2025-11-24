@@ -1,0 +1,22 @@
+# Example configuration for Dumb Smart Display
+hardware:
+  simulate: true  # Set to false when running on Pi hardware
+  rotation: 0
+  cycle_seconds: 30
+
+modules:
+  enabled:
+    - clock
+  settings:
+    clock:
+      title: "Clock"
+      format: "%Y-%m-%d %H:%M:%S"
+
+api_tokens:
+  weather: "CHANGE_ME"
+  calendar: "CHANGE_ME"
+  meal_planner: "CHANGE_ME"
+
+appearance:
+  brightness: 1.0
+  theme: "light"

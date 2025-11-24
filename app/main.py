@@ -1,23 +1,97 @@
 #!/usr/bin/env python3
 
-from app.buttons import init_buttons
-from app.display import Display
+import argparse
 import time
-from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict
 
-def main():
-    display = Display(simulate=True)
-    init_buttons(display)
+import yaml
+
+from app.buttons import init_buttons
+from app.core.module_manager import ModuleManager
+from app.display import Display
+
+
+DEFAULT_CONFIG_PATH = Path("config/config.yml")
+DEFAULT_CONFIG_FALLBACK = Path("config/config.example.yml")
+
+
+def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Dict[str, Any]:
+    if path.exists():
+        with path.open("r", encoding="utf-8") as handle:
+            return yaml.safe_load(handle) or {}
+
+    if DEFAULT_CONFIG_FALLBACK.exists():
+        with DEFAULT_CONFIG_FALLBACK.open("r", encoding="utf-8") as handle:
+            print(f"[MAIN] Using fallback config: {DEFAULT_CONFIG_FALLBACK}")
+            return yaml.safe_load(handle) or {}
+
+    print("[MAIN] No configuration found. Using defaults.")
+    return {}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run the Dumb Smart Display.")
+    parser.add_argument("--config", type=str, default=str(DEFAULT_CONFIG_PATH), help="Path to YAML configuration file.")
+    parser.add_argument("--simulate", action="store_true", help="Force simulator mode regardless of config.")
+    parser.add_argument("--cycles", type=int, default=0, help="Number of render cycles before exiting (0 = infinite).")
+    return parser.parse_args()
+
+
+def build_display(config: Dict[str, Any], force_simulate: bool) -> Display:
+    hardware_cfg = config.get("hardware", {})
+    simulate = force_simulate or hardware_cfg.get("simulate", True)
+    rotation = int(hardware_cfg.get("rotation", 0))
+    return Display(simulate=simulate, rotation=rotation)
+
+
+def build_module_manager(config: Dict[str, Any]) -> ModuleManager:
+    modules_cfg = config.get("modules", {})
+    enabled_modules = modules_cfg.get("enabled")
+    module_config = modules_cfg.get("settings", {})
+    manager = ModuleManager(enabled_modules=enabled_modules, module_config=module_config)
+    manager.load_modules()
+    return manager
+
+
+def main() -> None:
+    args = parse_args()
+    config_path = Path(args.config)
+    config = load_config(config_path)
+
+    display = build_display(config, force_simulate=args.simulate)
+    init_buttons(display, simulate=display.simulate)
 
     print("[MAIN] Dumb Smart Display starting...", flush=True)
+    manager = build_module_manager(config)
+
+    cycle_delay = int(config.get("hardware", {}).get("cycle_seconds", 30))
+    max_cycles = args.cycles
+    cycle_count = 0
 
     try:
         while True:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            display.render_text(f"Dumb Smart Display\n{now}")
-            time.sleep(30)
+            module = manager.next_module()
+            if module is None:
+                display.render_text("No modules enabled.")
+            else:
+                try:
+                    content = module.render()
+                    display.render(content)
+                except Exception as exc:  # pragma: no cover - runtime safety
+                    print(f"[MAIN] Error rendering module {module}: {exc}", flush=True)
+
+            manager.tick_modules()
+            cycle_count += 1
+
+            if max_cycles and cycle_count >= max_cycles:
+                print("[MAIN] Completed requested render cycles. Exiting.")
+                break
+
+            time.sleep(cycle_delay)
     except KeyboardInterrupt:
         print("[MAIN] Exiting...")
+
 
 if __name__ == "__main__":
     main()
