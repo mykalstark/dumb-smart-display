@@ -4,9 +4,9 @@ After=network.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/dumb-smart-display
-ExecStart=/home/pi/dumb-smart-display/.venv/bin/python -m app.main
+User={{APP_USER}}
+WorkingDirectory={{APP_DIR}}
+ExecStart={{APP_DIR}}/.venv/bin/python -m app.main
 Restart=on-failure
 
 [Install]
