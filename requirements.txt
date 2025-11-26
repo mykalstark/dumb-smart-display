@@ -2,3 +2,5 @@ gpiozero
 RPi.GPIO
 PyYAML
 requests
+pillow
+spidev
