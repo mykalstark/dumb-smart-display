@@ -1,7 +1,16 @@
 # Example configuration for Dumb Smart Display
 hardware:
-  simulate: true  # Set to false when running on Pi hardware
+  simulate: false  # Set to true to force simulator mode
   rotation: 0
+  driver: "epd7in5_V2"  # 7.5" V2 black/white panel
+  library_path: "./lib"  # Where install.sh places waveshare_epd
+  pins:
+    rst: 5    # Reset -> GPIO5 (Pin 29)
+    dc: 25    # Data/Command -> GPIO25 (Pin 22)
+    busy: 24  # Busy -> GPIO24 (Pin 18)
+    cs: 8     # Chip Select -> GPIO8 CE0 (Pin 24)
+    mosi: 10  # MOSI -> GPIO10 (Pin 19)
+    sclk: 11  # SCLK -> GPIO11 (Pin 23)
   cycle_seconds: 30
 
 modules:
