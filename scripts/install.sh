@@ -40,32 +40,29 @@ mkdir -p "${LIB_DIR}"
 if [ ! -d "${WAVESHARE_LIB_DIR}" ]; then
   echo "[INSTALL] Fetching Waveshare e-Paper Python library into ./lib/waveshare_epd..."
   TMP_DIR="$(mktemp -d)"
-  git clone --depth=1 https://github.com/waveshare/e-Paper.git "${TMP_DIR}/e-Paper"
+  
+  # --- START CHANGE: Use Sparse Checkout instead of full clone ---
+  echo "[INSTALL] Performing sparse checkout to save space..."
+  pushd "${TMP_DIR}" > /dev/null
+  git init e-Paper
+  cd e-Paper
+  git remote add origin https://github.com/waveshare/e-Paper.git
+  git config core.sparseCheckout true
+  
+  # Tell git exactly which folder we want
+  echo "RaspberryPi_JetsonNano/python/lib/waveshare_epd" >> .git/info/sparse-checkout
+  
+  # Pull only that folder (depth 1 for speed)
+  git pull --depth=1 origin master
+  popd > /dev/null
+  # --- END CHANGE ---
+
+  # The path to copy is now guaranteed to exist without the extra STM32 bloat
   cp -r "${TMP_DIR}/e-Paper/RaspberryPi_JetsonNano/python/lib/waveshare_epd" "${LIB_DIR}/"
   rm -rf "${TMP_DIR}"
 else
   echo "[INSTALL] waveshare_epd already exists — skipping clone."
 fi
-
-echo "[INSTALL] Forcing correct epd7in5_V2.py and epdconfig.py via curl..."
-mkdir -p "${WAVESHARE_LIB_DIR}"
-
-curl -L -o "${WAVESHARE_LIB_DIR}/epd7in5_V2.py" \
-  https://raw.githubusercontent.com/waveshare/e-Paper/master/RaspberryPi_JetsonNano/python/lib/waveshare_epd/epd7in5_V2.py
-
-curl -L -o "${WAVESHARE_LIB_DIR}/epdconfig.py" \
-  https://raw.githubusercontent.com/waveshare/e-Paper/master/RaspberryPi_JetsonNano/python/lib/waveshare_epd/epdconfig.py
-
-echo "[INSTALL] Display drivers updated."
-
-echo "[INSTALL] Creating virtualenv..."
-python3 -m venv .venv
-
-echo "[INSTALL] Installing Python project dependencies..."
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-deactivate
 
 echo "[INSTALL] Installing Waveshare PyPI driver (optional)..."
 sudo pip3 install --break-system-packages waveshare-epaper || true
