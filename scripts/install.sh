@@ -24,7 +24,8 @@ sudo apt install -y \
   python3-spidev \
   python3-pil \
   python3-numpy \
-  git
+  git \
+  curl
 
 echo "[INSTALL] Enabling SPI interface..."
 if command -v raspi-config >/dev/null 2>&1; then
@@ -45,6 +46,17 @@ if [ ! -d "${WAVESHARE_LIB_DIR}" ]; then
 else
   echo "[INSTALL] waveshare_epd already exists — skipping clone."
 fi
+
+echo "[INSTALL] Forcing correct epd7in5_V2.py and epdconfig.py via curl..."
+mkdir -p "${WAVESHARE_LIB_DIR}"
+
+curl -L -o "${WAVESHARE_LIB_DIR}/epd7in5_V2.py" \
+  https://raw.githubusercontent.com/waveshare/e-Paper/master/RaspberryPi_JetsonNano/python/lib/waveshare_epd/epd7in5_V2.py
+
+curl -L -o "${WAVESHARE_LIB_DIR}/epdconfig.py" \
+  https://raw.githubusercontent.com/waveshare/e-Paper/master/RaspberryPi_JetsonNano/python/lib/waveshare_epd/epdconfig.py
+
+echo "[INSTALL] Display drivers updated."
 
 echo "[INSTALL] Creating virtualenv..."
 python3 -m venv .venv
