@@ -2,3 +2,4 @@ gpiozero
 RPi.GPIO
 PyYAML
 requests
+Pillow
