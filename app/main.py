@@ -42,7 +42,19 @@ def build_display(config: Dict[str, Any], force_simulate: bool) -> Display:
     hardware_cfg = config.get("hardware", {})
     simulate = force_simulate or hardware_cfg.get("simulate", True)
     rotation = int(hardware_cfg.get("rotation", 0))
-    return Display(simulate=simulate, rotation=rotation)
+    driver_name = hardware_cfg.get("driver", "epd7in5_V2")
+    library_path = hardware_cfg.get("library_path")
+    pins_cfg = hardware_cfg.get("pins") or {}
+
+    pin_config = {key: int(value) for key, value in pins_cfg.items()}
+
+    return Display(
+        simulate=simulate,
+        rotation=rotation,
+        driver_name=driver_name,
+        library_path=library_path,
+        pin_config=pin_config,
+    )
 
 
 def build_module_manager(config: Dict[str, Any]) -> ModuleManager:
