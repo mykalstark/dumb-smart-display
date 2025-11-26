@@ -64,6 +64,18 @@ else
   echo "[INSTALL] waveshare_epd already exists — skipping clone."
 fi
 
+echo "[INSTALL] Creating virtualenv..."
+# Only create if it doesn't exist to allow re-running script safely
+if [ ! -d ".venv" ]; then
+    python3 -m venv .venv
+fi
+
+echo "[INSTALL] Installing Python project dependencies..."
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+deactivate
+
 echo "[INSTALL] Installing Waveshare PyPI driver (optional)..."
 sudo pip3 install --break-system-packages waveshare-epaper || true
 
