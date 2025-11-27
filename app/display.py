@@ -54,6 +54,11 @@ class HardwareDisplayDriver:
         self.driver = driver_module.EPD()
 
         self._fast_display = None
+        self._fast_init = None
+        self._fast_initialized = False
+        self._needs_full_refresh = True
+        self._partial_since_full = 0
+        self._max_partials_before_full = 5
         
         try:
             print("[Display] Initializing driver...")
@@ -67,6 +72,7 @@ class HardwareDisplayDriver:
         self.width = self.driver.width
         self.height = self.driver.height
 
+        self._fast_init = self._detect_fast_init_method()
         self._fast_display = self._detect_fast_display_method()
 
         print(
@@ -87,6 +93,21 @@ class HardwareDisplayDriver:
             method = getattr(self.driver, name, None)
             if callable(method):
                 print(f"[Display] Using fast display method: {name}")
+                return method
+
+        return None
+
+    def _detect_fast_init_method(self):
+        candidates = [
+            "init_fast",
+            "initFast",
+            "init_Fast",
+        ]
+
+        for name in candidates:
+            method = getattr(self.driver, name, None)
+            if callable(method):
+                print(f"[Display] Using fast init method: {name}")
                 return method
 
         return None
@@ -148,12 +169,33 @@ class HardwareDisplayDriver:
         buffer = self.driver.getbuffer(prepared)
 
         if self._fast_display:
+            if self._fast_init and not self._fast_initialized:
+                try:
+                    self._fast_init()
+                    self._fast_initialized = True
+                    self._needs_full_refresh = True
+                except Exception as exc:
+                    print(
+                        f"[Display] Fast init failed ({exc}); continuing with normal refresh.")
+
             try:
+                if self._needs_full_refresh or (
+                    self._partial_since_full >= self._max_partials_before_full
+                ):
+                    self._partial_since_full = 0
+                    self._needs_full_refresh = False
+                    self.driver.display(buffer)
+                    return
+
                 self._fast_display(buffer)
+                self._partial_since_full += 1
                 return
             except Exception as exc:
                 print(f"[Display] Fast display failed ({exc}); falling back to full refresh.")
 
+        # Fast path unavailable or failed; perform a full refresh and reset counters.
+        self._partial_since_full = 0
+        self._needs_full_refresh = False
         self.driver.display(buffer)
 
 
