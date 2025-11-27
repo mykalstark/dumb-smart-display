@@ -54,16 +54,18 @@ class Module:
         # Calculate sizes
         time_w, time_h = self._get_text_size(draw, time_str, self.time_font)
         date_w, date_h = self._get_text_size(draw, date_str, self.date_font)
-        
-        # Calculate positions (Centered)
-        total_h = time_h + date_h + 20  # 20px padding between time and date
-        start_y = (height - total_h) // 2
-        
+
+        # Calculate positions (Centered with breathing room)
+        vertical_padding = 40
+        total_h = time_h + date_h + 30  # 30px padding between time and date
+        available_height = max(height - (vertical_padding * 2), total_h)
+        start_y = vertical_padding + (available_height - total_h) // 2
+
         time_x = (width - time_w) // 2
         time_y = start_y
-        
+
         date_x = (width - date_w) // 2
-        date_y = time_y + time_h + 20
+        date_y = time_y + time_h + 30
         
         # Draw
         draw.text((time_x, time_y), time_str, font=self.time_font, fill=0)

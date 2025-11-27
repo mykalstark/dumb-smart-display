@@ -52,6 +52,8 @@ class HardwareDisplayDriver:
 
         driver_module = importlib.import_module(f"waveshare_epd.{self.driver_name}")
         self.driver = driver_module.EPD()
+
+        self._fast_display = None
         
         try:
             print("[Display] Initializing driver...")
@@ -65,10 +67,29 @@ class HardwareDisplayDriver:
         self.width = self.driver.width
         self.height = self.driver.height
 
+        self._fast_display = self._detect_fast_display_method()
+
         print(
             "[Display] Hardware driver initialized "
             f"(rotation={rotation}, driver={driver_name}, size={self.width}x{self.height})."
         )
+
+    def _detect_fast_display_method(self):
+        candidates = [
+            "display_partial",
+            "displayPartial",
+            "display_Partial",
+            "display_fast",
+            "displayFast",
+        ]
+
+        for name in candidates:
+            method = getattr(self.driver, name, None)
+            if callable(method):
+                print(f"[Display] Using fast display method: {name}")
+                return method
+
+        return None
 
     def _ensure_library_path(self) -> None:
         if not self.library_path:
@@ -123,7 +144,17 @@ class HardwareDisplayDriver:
             raise TypeError("HardwareDisplayDriver expects a PIL.Image for render_image")
 
         prepared = self._prepare_image(image)
-        self.driver.display(self.driver.getbuffer(prepared))
+
+        buffer = self.driver.getbuffer(prepared)
+
+        if self._fast_display:
+            try:
+                self._fast_display(buffer)
+                return
+            except Exception as exc:
+                print(f"[Display] Fast display failed ({exc}); falling back to full refresh.")
+
+        self.driver.display(buffer)
 
 
 class Display:
@@ -159,13 +190,58 @@ class Display:
             return
 
         if hasattr(content, "size") and hasattr(content, "mode"):
-            self.render_image(content)
+            self.render_image(self._add_border(content))
             return
 
         self.render_text(str(content))
 
     def render_text(self, text: str) -> None:
-        self.driver.render_text(text)
+        image = self._render_text_image(text)
+        self.render_image(image)
 
     def render_image(self, image: object) -> None:
         self.driver.render_image(image)
+
+    def _render_text_image(self, text: str) -> Image.Image:
+        width = getattr(self.driver, "width", 800)
+        height = getattr(self.driver, "height", 480)
+
+        image = Image.new("1", (width, height), 255)
+        draw = ImageDraw.Draw(image)
+
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 28)
+        except Exception:
+            font = ImageFont.load_default()
+
+        text_w, text_h = draw.textsize(text, font=font)
+        x = (width - text_w) // 2
+        y = (height - text_h) // 2
+
+        draw.text((x, y), text, font=font, fill=0)
+        return self._add_border(image)
+
+    def _add_border(self, image: Image.Image, thickness: int = 8, inset: int = 6) -> Image.Image:
+        bordered = image.copy()
+        draw = ImageDraw.Draw(bordered)
+
+        outer = [0, 0, bordered.width - 1, bordered.height - 1]
+        inner = [
+            outer[0] + thickness,
+            outer[1] + thickness,
+            outer[2] - thickness,
+            outer[3] - thickness,
+        ]
+
+        draw.rectangle(outer, outline=0, width=thickness)
+
+        if inset > 0:
+            inset_rect = [
+                inner[0] + inset,
+                inner[1] + inset,
+                inner[2] - inset,
+                inner[3] - inset,
+            ]
+            draw.rectangle(inset_rect, outline=0, width=2)
+
+        return bordered
