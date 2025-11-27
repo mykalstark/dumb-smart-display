@@ -22,6 +22,11 @@ modules:
       date_format: "%a %d"     # Short date (e.g. Fri 26)
       time_size: 120           # Even bigger time
       date_size: 50            # Bigger date
+    mealie_today:
+      enabled: true
+      base_url: "http://192.168.xx.yy:9000"     # or whatever you're using as MEALIE_BASE_URL
+      api_token: "eyJhbRitE2oS2jl1EtGPk"        # your token
+      refresh_seconds: 3600                     # once per hour
 
 api_tokens:
   weather: "CHANGE_ME"
