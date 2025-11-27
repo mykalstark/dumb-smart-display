@@ -28,7 +28,8 @@ sudo apt install -y \
   git \
   curl \
   swig \
-  liblgpio-dev
+  liblgpio-dev \
+  fonts-dejavu
 
 echo "[INSTALL] Enabling SPI interface..."
 if command -v raspi-config >/dev/null 2>&1; then

@@ -18,8 +18,10 @@ modules:
     - clock
   settings:
     clock:
-      title: "Clock"
-      format: "%Y-%m-%d %H:%M:%S"
+      time_format: "%I:%M %p"  # 12-hour format (e.g. 02:30 PM)
+      date_format: "%a %d"     # Short date (e.g. Fri 26)
+      time_size: 120           # Even bigger time
+      date_size: 50            # Bigger date
 
 api_tokens:
   weather: "CHANGE_ME"
