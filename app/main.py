@@ -83,9 +83,6 @@ def main() -> None:
     config_path = Path(args.config)
     config = load_config(config_path)
 
-    display = build_display(config, force_simulate=args.simulate)
-    init_buttons(display, simulate=display.simulate)
-    
     # 1. Load Fonts
     fonts = load_fonts()
 
@@ -93,13 +90,20 @@ def main() -> None:
     # 2. Pass fonts to manager
     manager = build_module_manager(config, fonts)
 
+    display = build_display(config, force_simulate=args.simulate)
+
+    def on_button(event: str) -> None:
+        manager.route_button_event(event)
+
+    init_buttons(display, simulate=display.simulate, on_event=on_button)
+
     cycle_delay = int(config.get("hardware", {}).get("cycle_seconds", 30))
     max_cycles = args.cycles
     cycle_count = 0
 
     try:
         while True:
-            module = manager.next_module()
+            module = manager.current_module()
             if module is None:
                 display.render_text("No modules enabled.")
             else:
@@ -125,6 +129,7 @@ def main() -> None:
                 print("[MAIN] Completed requested render cycles. Exiting.")
                 break
 
+            manager.activate_next()
             time.sleep(cycle_delay)
     except KeyboardInterrupt:
         print("[MAIN] Exiting...")

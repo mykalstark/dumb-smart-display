@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from typing import Optional
+from typing import Callable, Optional
 
 BTN1 = 17
 BTN2 = 27
@@ -22,7 +22,11 @@ def _import_button():
         return None
 
 
-def init_buttons(display: Optional[object] = None, simulate: bool = False) -> None:
+def init_buttons(
+    display: Optional[object] = None,
+    simulate: bool = False,
+    on_event: Optional[Callable[[str], None]] = None,
+) -> None:
     simulate = simulate or os.environ.get("DISPLAY_SIMULATE", "").lower() in {"1", "true", "yes"}
 
     if simulate:
@@ -37,8 +41,13 @@ def init_buttons(display: Optional[object] = None, simulate: bool = False) -> No
     b2 = Button(BTN2, pull_up=True, bounce_time=0.05)
     b3 = Button(BTN3, pull_up=True, bounce_time=0.05)
 
-    b1.when_pressed = lambda: log("Button 1 pressed")
-    b2.when_pressed = lambda: log("Button 2 pressed")
-    b3.when_pressed = lambda: log("Button 3 pressed")
+    def _dispatch(event: str) -> None:
+        log(f"Button event: {event}")
+        if on_event:
+            on_event(event)
+
+    b1.when_pressed = lambda: _dispatch("prev")
+    b2.when_pressed = lambda: _dispatch("next")
+    b3.when_pressed = lambda: _dispatch("action")
 
     log("Buttons initialized.")
