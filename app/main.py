@@ -10,7 +10,7 @@ import yaml
 from PIL import ImageFont  # <--- Need this to load fonts
 
 from app.buttons import init_buttons
-from app.core.module_manager.py import ModuleManager
+from app.core.module_manager import ModuleManager
 from app.display import Display
 
 
