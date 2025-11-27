@@ -56,9 +56,6 @@ class HardwareDisplayDriver:
         self._fast_display = None
         self._fast_init = None
         self._fast_initialized = False
-        self._needs_full_refresh = True
-        self._partial_since_full = 0
-        self._max_partials_before_full = 5
         
         try:
             print("[Display] Initializing driver...")
@@ -173,29 +170,16 @@ class HardwareDisplayDriver:
                 try:
                     self._fast_init()
                     self._fast_initialized = True
-                    self._needs_full_refresh = True
                 except Exception as exc:
                     print(
                         f"[Display] Fast init failed ({exc}); continuing with normal refresh.")
 
             try:
-                if self._needs_full_refresh or (
-                    self._partial_since_full >= self._max_partials_before_full
-                ):
-                    self._partial_since_full = 0
-                    self._needs_full_refresh = False
-                    self.driver.display(buffer)
-                    return
-
                 self._fast_display(buffer)
-                self._partial_since_full += 1
                 return
             except Exception as exc:
                 print(f"[Display] Fast display failed ({exc}); falling back to full refresh.")
 
-        # Fast path unavailable or failed; perform a full refresh and reset counters.
-        self._partial_since_full = 0
-        self._needs_full_refresh = False
         self.driver.display(buffer)
 
 
