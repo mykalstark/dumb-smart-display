@@ -41,14 +41,27 @@ class HardwareDisplayDriver:
 
         self._ensure_library_path()
 
+        # The library file on disk should now have RST=5 (patched by install.sh),
+        # so this import is safe and won't grab GPIO 17.
         import waveshare_epd.epdconfig as epdconfig  # type: ignore
 
         self.epdconfig = epdconfig
-        self._apply_pin_overrides()
+
+        # Apply any other config overrides (e.g. busy pin)
+        self._apply_simple_overrides()
 
         driver_module = importlib.import_module(f"waveshare_epd.{self.driver_name}")
         self.driver = driver_module.EPD()
-        self.driver.init()
+        
+        try:
+            print("[Display] Initializing driver...")
+            # This will open the pins defined in epdconfig.py
+            self.driver.init()
+            print("[Display] Driver init successful.")
+        except Exception as e:
+            print(f"[Display] CRITICAL: Driver init crashed: {e}")
+            raise
+
         self.width = self.driver.width
         self.height = self.driver.height
 
@@ -65,7 +78,11 @@ class HardwareDisplayDriver:
         if lib_path.is_dir() and str(lib_path) not in sys.path:
             sys.path.append(str(lib_path))
 
-    def _apply_pin_overrides(self) -> None:
+    def _apply_simple_overrides(self) -> None:
+        """
+        Simple variable updates for non-critical pins.
+        We assume the critical conflict (RST=17) was resolved by patching the file on disk.
+        """
         pin_map = {
             "rst": "RST_PIN",
             "dc": "DC_PIN",
@@ -77,7 +94,10 @@ class HardwareDisplayDriver:
 
         for key, attr in pin_map.items():
             if key in self.pin_config:
-                setattr(self.epdconfig, attr, int(self.pin_config[key]))
+                val = int(self.pin_config[key])
+                # Only update if different, to avoid touching the object unnecessarily
+                if hasattr(self.epdconfig, attr) and getattr(self.epdconfig, attr) != val:
+                    setattr(self.epdconfig, attr, val)
 
     def _prepare_image(self, image: Image.Image) -> Image.Image:
         img = image.convert("1").resize((self.width, self.height))

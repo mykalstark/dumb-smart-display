@@ -1,5 +1,5 @@
 gpiozero
-RPi.GPIO
+rpi-lgpio
 PyYAML
 requests
 pillow
