@@ -9,7 +9,7 @@ import requests  # make sure this is installed in your venv / system
 log = logging.getLogger(__name__)
 
 
-class MealieTodayModule:
+class Module:
     """
     Module that shows today's planned dinner from Mealie.
     Expects the /api/households/mealplans/today endpoint to return a list

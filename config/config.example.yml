@@ -16,6 +16,7 @@ hardware:
 modules:
   enabled:
     - clock
+    - mealie_today
   settings:
     clock:
       time_format: "%I:%M %p"  # 12-hour format (e.g. 02:30 PM)
