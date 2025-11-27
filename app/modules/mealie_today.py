@@ -96,17 +96,28 @@ class Module:
         # 2. Draw Header Bar (Top 1/4 of screen)
         # Use floor division to get approx 25% of height (e.g., 120px for 480px total)
         header_height = height // 4
-        draw.rectangle([(0, 0), (width, header_height)], fill=0)
+        header_inset = 10
+        draw.rectangle(
+            [(header_inset, header_inset), (width - header_inset, header_height - header_inset)],
+            fill=0,
+        )
 
         # 3. Draw Header Text (White Text, "Large" Font)
         header_text = "TODAY'S DINNER"
         # We use the 'large' font now to make it prominent
         header_font = self.fonts.get("large", self.fonts.get("default"))
-        
+
         hw, hh = self._get_text_size(draw, header_text, header_font)
         hx = (width - hw) // 2
-        hy = (header_height - hh) // 2
+        hy = header_inset + ((header_height - (header_inset * 2)) - hh) // 2
         draw.text((hx, hy), header_text, font=header_font, fill=255)
+
+        # Divider to separate header and body
+        draw.line(
+            [(header_inset, header_height), (width - header_inset, header_height)],
+            fill=0,
+            width=3,
+        )
 
         # 4. Draw Meal Name (Centered in remaining 3/4 space)
         meal_text = self.meal_name
@@ -115,7 +126,7 @@ class Module:
         # Define the body area
         body_y_start = header_height
         body_height = height - header_height
-        margin = 40
+        margin = 50
         max_text_width = width - (margin * 2)
 
         # Wrap text if needed
