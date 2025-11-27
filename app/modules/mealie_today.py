@@ -11,6 +11,8 @@ from PIL import Image, ImageDraw, ImageFont
 log = logging.getLogger(__name__)
 
 class Module:
+    name = "mealie_today"
+
     def __init__(self, config: Dict[str, Any], fonts: Dict[str, Any]):
         self.base_url = config.get("base_url", "").rstrip("/")
         self.api_token = config.get("api_token", "")
@@ -62,6 +64,13 @@ class Module:
                 dinner = self._extract_dinner_name(entries)
                 self.meal_name = dinner if dinner else "No dinner planned"
             self.last_fetch = now
+
+    def handle_button(self, event: str) -> None:
+        # Action handling is not yet implemented for this module.
+        return
+
+    def refresh_interval(self) -> Optional[int]:
+        return self.refresh_seconds
 
     # ------------------------
     # Render Helpers

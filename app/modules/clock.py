@@ -1,10 +1,12 @@
 # app/modules/clock.py
 
 from datetime import datetime
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 from PIL import Image, ImageDraw, ImageFont
 
 class Module:
+    name = "clock"
+
     def __init__(self, config: Dict[str, Any], fonts: Dict[str, Any]) -> None:
         self.config = config or {}
         self.fonts = fonts
@@ -75,3 +77,10 @@ class Module:
 
     def tick(self) -> None:
         pass
+
+    def handle_button(self, event: str) -> None:
+        # Clock currently ignores button presses.
+        return
+
+    def refresh_interval(self) -> Optional[int]:
+        return None
