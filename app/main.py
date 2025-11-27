@@ -1,3 +1,4 @@
+# app/main.py
 #!/usr/bin/env python3
 
 import argparse
@@ -6,9 +7,10 @@ from pathlib import Path
 from typing import Any, Dict
 
 import yaml
+from PIL import ImageFont  # <--- Need this to load fonts
 
 from app.buttons import init_buttons
-from app.core.module_manager import ModuleManager
+from app.core.module_manager.py import ModuleManager
 from app.display import Display
 
 
@@ -20,15 +22,26 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Dict[str, Any]:
     if path.exists():
         with path.open("r", encoding="utf-8") as handle:
             return yaml.safe_load(handle) or {}
-
     if DEFAULT_CONFIG_FALLBACK.exists():
         with DEFAULT_CONFIG_FALLBACK.open("r", encoding="utf-8") as handle:
             print(f"[MAIN] Using fallback config: {DEFAULT_CONFIG_FALLBACK}")
             return yaml.safe_load(handle) or {}
-
     print("[MAIN] No configuration found. Using defaults.")
     return {}
 
+# <--- NEW HELPER: Load Fonts
+def load_fonts() -> Dict[str, Any]:
+    fonts = {}
+    try:
+        # Adjust paths/sizes as you like
+        fonts["default"] = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
+        fonts["large"] = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48)
+        fonts["small"] = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
+    except IOError:
+        print("[MAIN] Warning: Could not load TrueType fonts. Using default bitmap font.")
+        default = ImageFont.load_default()
+        fonts = {"default": default, "large": default, "small": default}
+    return fonts
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Dumb Smart Display.")
@@ -45,9 +58,7 @@ def build_display(config: Dict[str, Any], force_simulate: bool) -> Display:
     driver_name = hardware_cfg.get("driver", "epd7in5_V2")
     library_path = hardware_cfg.get("library_path")
     pins_cfg = hardware_cfg.get("pins") or {}
-
     pin_config = {key: int(value) for key, value in pins_cfg.items()}
-
     return Display(
         simulate=simulate,
         rotation=rotation,
@@ -56,12 +67,13 @@ def build_display(config: Dict[str, Any], force_simulate: bool) -> Display:
         pin_config=pin_config,
     )
 
-
-def build_module_manager(config: Dict[str, Any]) -> ModuleManager:
+# <--- UPDATED: Accepts fonts
+def build_module_manager(config: Dict[str, Any], fonts: Dict[str, Any]) -> ModuleManager:
     modules_cfg = config.get("modules", {})
     enabled_modules = modules_cfg.get("enabled")
     module_config = modules_cfg.get("settings", {})
-    manager = ModuleManager(enabled_modules=enabled_modules, module_config=module_config)
+    # Pass fonts to manager
+    manager = ModuleManager(fonts=fonts, enabled_modules=enabled_modules, module_config=module_config)
     manager.load_modules()
     return manager
 
@@ -73,9 +85,13 @@ def main() -> None:
 
     display = build_display(config, force_simulate=args.simulate)
     init_buttons(display, simulate=display.simulate)
+    
+    # 1. Load Fonts
+    fonts = load_fonts()
 
     print("[MAIN] Dumb Smart Display starting...", flush=True)
-    manager = build_module_manager(config)
+    # 2. Pass fonts to manager
+    manager = build_module_manager(config, fonts)
 
     cycle_delay = int(config.get("hardware", {}).get("cycle_seconds", 30))
     max_cycles = args.cycles
@@ -88,9 +104,18 @@ def main() -> None:
                 display.render_text("No modules enabled.")
             else:
                 try:
-                    content = module.render()
+                    # 3. GET WIDTH/HEIGHT from the display driver
+                    # The display object wraps the driver, which knows the size.
+                    w = display.driver.width
+                    h = display.driver.height
+
+                    # 4. PASS WIDTH/HEIGHT to render
+                    # We use **kwargs style implies modules can accept what they want
+                    # but specifically, we pass width=w, height=h
+                    content = module.render(width=w, height=h)
+                    
                     display.render(content)
-                except Exception as exc:  # pragma: no cover - runtime safety
+                except Exception as exc:
                     print(f"[MAIN] Error rendering module {module}: {exc}", flush=True)
 
             manager.tick_modules()

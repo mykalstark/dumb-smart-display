@@ -1,3 +1,4 @@
+# app/core/module_manager.py
 import importlib
 import pkgutil
 from pathlib import Path
@@ -9,11 +10,13 @@ class ModuleManager:
 
     def __init__(
         self,
+        fonts: Dict[str, Any],  # <--- NEW ARGUMENT
         modules_package: str = "app.modules",
         modules_path: Optional[Path] = None,
         enabled_modules: Optional[List[str]] = None,
         module_config: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> None:
+        self.fonts = fonts  # <--- Store fonts
         self.modules_package = modules_package
         self.modules_path = modules_path or Path(__file__).resolve().parent.parent / "modules"
         self.enabled_modules = enabled_modules
@@ -44,7 +47,7 @@ class ModuleManager:
     def _load_single_module(self, module_name: str) -> Optional[Any]:
         try:
             imported = importlib.import_module(f"{self.modules_package}.{module_name}")
-        except Exception as exc:  # pragma: no cover - import-time failures logged
+        except Exception as exc:
             print(f"[MODULES] Failed to import {module_name}: {exc}", flush=True)
             return None
 
@@ -54,7 +57,15 @@ class ModuleManager:
             return None
 
         cfg = self.module_config.get(module_name, {})
-        instance = module_cls(config=cfg)
+        
+        # <--- PASS FONTS HERE
+        # We try to pass 'fonts' if the module accepts it, otherwise we fallback
+        try:
+            instance = module_cls(config=cfg, fonts=self.fonts)
+        except TypeError:
+            # Fallback for older modules (like clock.py) that might not accept fonts yet
+            instance = module_cls(config=cfg)
+
         print(f"[MODULES] Loaded module '{module_name}'.", flush=True)
         return instance
 
