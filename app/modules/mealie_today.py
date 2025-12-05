@@ -182,6 +182,158 @@ class Module:
         except AttributeError:
             return draw.textsize(text, font=font)
 
+    def _render_full(self, width: int, height: int) -> Image.Image:
+        """Classic full-screen light layout used before layout presets."""
+        image = Image.new("1", (width, height), 255)
+        draw = ImageDraw.Draw(image)
+
+        header_height = int(height * 0.22)
+        header_inset = 24
+        body_padding = 32
+
+        draw.rounded_rectangle(
+            [
+                (header_inset, header_inset),
+                (width - header_inset, header_height - header_inset),
+            ],
+            radius=18,
+            fill=0,
+        )
+
+        header_text = "Tonight's Dinner"
+        header_font = self.fonts.get("large", self.fonts.get("default"))
+        hw, hh = self._get_text_size(draw, header_text, header_font)
+        hx = (width - hw) // 2
+        hy = header_inset + ((header_height - (header_inset * 2)) - hh) // 2
+        draw.text((hx, hy), header_text, font=header_font, fill=255)
+
+        draw.line(
+            [(header_inset, header_height), (width - header_inset, header_height)],
+            fill=0,
+            width=2,
+        )
+        draw.line(
+            [(header_inset, header_height + 4), (width - header_inset, header_height + 4)],
+            fill=0,
+            width=1,
+        )
+
+        meal_text = str(self.meal_details.get("name") or "No dinner planned")
+        meal_font = self.fonts.get("large", self.fonts.get("default"))
+
+        hw, hh = self._get_text_size(draw, header_text, header_font)
+        header_y = y0 + 12
+        draw.text(((x0 + x1 - hw) // 2, header_y), header_text, font=header_font, fill=255)
+
+        max_width = x1 - x0 - 24
+        lines = self._wrap_text(draw, meal_text, meal_font, max_width)
+        current_y = header_y + hh + 14
+        for line in lines:
+            lw, lh = self._get_text_size(draw, line, meal_font)
+            draw.text(((x0 + x1 - lw) // 2, current_y), line, font=meal_font, fill=255)
+            current_y += lh + 6
+
+        card_top = current_y + 10
+        card_height = 170
+        card_left = body_padding
+        card_right = width - body_padding
+        card_bottom = min(card_top + card_height, height - body_padding)
+
+    def _draw_time_card(self, draw: ImageDraw.Draw, box: Tuple[int, int, int, int], invert: bool = False) -> None:
+        x0, y0, x1, y1 = self._inset_box(box, 12)
+        bg_fill = 0 if invert else 255
+        text_fill = 255 if invert else 0
+
+        draw.rounded_rectangle([(x0, y0), (x1, y1)], radius=16, outline=0, width=2, fill=bg_fill if invert else None)
+
+        label_font = self.fonts.get("default")
+        value_font = self.fonts.get("large", self.fonts.get("default"))
+
+        prep_text = self._format_minutes(self.meal_details.get("prep"))
+        cook_text = self._format_minutes(self.meal_details.get("cook"))
+        total_text = self._format_minutes(self.meal_details.get("total"))
+
+        col_width = (x1 - x0) // 3
+        col_centers = [x0 + col_width * i + col_width // 2 for i in range(3)]
+        labels = ["Prep", "Cook", "Total"]
+        values = [prep_text, cook_text, total_text]
+
+        top = y0 + 20
+        for idx, (label, value) in enumerate(zip(labels, values)):
+            lw, lh = self._get_text_size(draw, label, label_font)
+            vw, vh = self._get_text_size(draw, value, value_font)
+            cx = col_centers[idx]
+            draw.text((cx - lw // 2, card_content_top), label, font=label_font, fill=0)
+            draw.text(
+                (cx - vw // 2, card_content_top + lh + 10),
+                value,
+                font=value_font,
+                fill=0,
+            )
+
+        draw.line(
+            [(card_left + col_width, card_top + 12), (card_left + col_width, card_bottom - 12)],
+            fill=0,
+            width=1,
+        )
+        draw.line(
+            [
+                (card_left + 2 * col_width, card_top + 12),
+                (card_left + 2 * col_width, card_bottom - 12),
+            ],
+            fill=0,
+        )
+        draw.text((cx + padding_x, cy + padding_y), text, font=banner_font, fill=255)
+
+    # ------------------------
+    # Main Render
+    # ------------------------
+    def render(self, width: int = 800, height: int = 480, **kwargs) -> Image.Image:
+        image = Image.new("1", (width, height), 255)
+        draw = ImageDraw.Draw(image)
+
+        layout = self._resolve_layout(kwargs.get("layout"))
+        slots = self._layout_slots(layout, width, height)
+
+        fallback_box = (0, 0, width, height)
+        title_box = self._pick_slot(slots, ("main", "primary", "row1_left", "top_left", "a"), fallback_box)
+        details_box = None
+        footer_box = None
+
+        for key in ("secondary", "row1_right", "top_right", "bottom_left", "bottom_right", "b", "c"):
+            if key in slots:
+                details_box = slots[key]
+                break
+
+        for key in ("tertiary", "row2_left", "row2_center", "row2_right", "footer_left", "footer_right", "d", "e"):
+            if key in slots:
+                footer_box = slots[key]
+                break
+
+        meal_text = str(self.meal_details.get("name") or "No dinner planned")
+        bottom_of_title = self._draw_title_card(draw, title_box, meal_text)
+
+        if details_box:
+            self._draw_time_card(draw, details_box, invert=layout.compact)
+        else:
+            stacked_box = (title_box[0], bottom_of_title + 10, title_box[2], title_box[3])
+            self._draw_time_card(draw, stacked_box)
+
+        start_by = self._compute_start_time(self.meal_details.get("total"))
+        target_time = self._parse_target_time()
+        target_str = datetime.datetime.combine(datetime.date.today(), target_time)
+        target_label = target_str.strftime("%I:%M %p").lstrip("0")
+
+        if start_by:
+            banner_text = f"Start by {self._format_clock(start_by)} to eat by {target_label}"
+        else:
+            banner_text = f"Plan to eat by {target_label}"
+
+        banner_area = footer_box or details_box or title_box
+        self._draw_banner(draw, banner_area, banner_text)
+
+        return image
+
     def _resolve_layout(self, layout_hint: Optional[Any]) -> LayoutPreset:
         if isinstance(layout_hint, LayoutPreset):
             return layout_hint
@@ -281,7 +433,7 @@ class Module:
 
     def _draw_title_card(self, draw: ImageDraw.Draw, box: Tuple[int, int, int, int], meal_text: str) -> int:
         x0, y0, x1, y1 = self._inset_box(box, 12)
-        draw.rounded_rectangle([(x0, y0), (x1, y1)], radius=18, fill=0)
+        draw.rounded_rectangle([(x0, y0), (x1, y1)], radius=18, outline=0, width=2)
 
         header_text = "Tonight's Dinner"
         header_font = self.fonts.get("large", self.fonts.get("default"))
@@ -289,24 +441,24 @@ class Module:
 
         hw, hh = self._get_text_size(draw, header_text, header_font)
         header_y = y0 + 12
-        draw.text(((x0 + x1 - hw) // 2, header_y), header_text, font=header_font, fill=255)
+        draw.text(((x0 + x1 - hw) // 2, header_y), header_text, font=header_font, fill=0)
 
         max_width = x1 - x0 - 24
         lines = self._wrap_text(draw, meal_text, meal_font, max_width)
         current_y = header_y + hh + 14
         for line in lines:
             lw, lh = self._get_text_size(draw, line, meal_font)
-            draw.text(((x0 + x1 - lw) // 2, current_y), line, font=meal_font, fill=255)
+            draw.text(((x0 + x1 - lw) // 2, current_y), line, font=meal_font, fill=0)
             current_y += lh + 6
 
         return current_y
 
     def _draw_time_card(self, draw: ImageDraw.Draw, box: Tuple[int, int, int, int], invert: bool = False) -> None:
         x0, y0, x1, y1 = self._inset_box(box, 12)
-        bg_fill = 0 if invert else 255
+        bg_fill = 0 if invert else None
         text_fill = 255 if invert else 0
 
-        draw.rounded_rectangle([(x0, y0), (x1, y1)], radius=16, outline=0, width=2, fill=bg_fill if invert else None)
+        draw.rounded_rectangle([(x0, y0), (x1, y1)], radius=16, outline=0, width=2, fill=bg_fill)
 
         label_font = self.fonts.get("default")
         value_font = self.fonts.get("large", self.fonts.get("default"))
@@ -345,20 +497,23 @@ class Module:
         draw.rounded_rectangle(
             [(cx, cy), (cx + width_needed, cy + height_needed)],
             radius=12,
-            fill=0,
+            outline=0,
+            width=2,
         )
-        draw.text((cx + padding_x, cy + padding_y), text, font=banner_font, fill=255)
+        draw.text((cx + padding_x, cy + padding_y), text, font=banner_font, fill=0)
 
     # ------------------------
     # Main Render
     # ------------------------
     def render(self, width: int = 800, height: int = 480, **kwargs) -> Image.Image:
+        layout = self._resolve_layout(kwargs.get("layout"))
+        if layout.name == "full":
+            return self._render_full(width, height)
+
         image = Image.new("1", (width, height), 255)
         draw = ImageDraw.Draw(image)
 
-        layout = self._resolve_layout(kwargs.get("layout"))
         slots = self._layout_slots(layout, width, height)
-
         fallback_box = (0, 0, width, height)
         title_box = self._pick_slot(slots, ("main", "primary", "row1_left", "top_left", "a"), fallback_box)
         details_box = None

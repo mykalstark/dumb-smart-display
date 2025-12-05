@@ -67,6 +67,130 @@ class Module:
             # Older Pillow
             return draw.textsize(text, font=font)
 
+    def _render_full(self, width: int, height: int) -> Image.Image:
+        """Classic full-screen light layout used before layout presets."""
+        image = Image.new("1", (width, height), 255)
+        draw = ImageDraw.Draw(image)
+
+        now = datetime.now()
+        time_str = now.strftime(self.time_format)
+        date_str = now.strftime(self.date_format)
+
+        header_height = int(height * 0.22)
+        header_inset = 24
+        body_padding = 32
+
+        draw.rounded_rectangle(
+            [
+                (header_inset, header_inset),
+                (width - header_inset, header_height - header_inset),
+            ],
+            radius=18,
+            fill=0,
+        )
+
+        header_font = self.fonts.get("large", self.fonts.get("default"))
+        hw, hh = self._get_text_size(draw, header_text, header_font)
+        hx = (width - hw) // 2
+        hy = header_inset + ((header_height - (header_inset * 2)) - hh) // 2
+        draw.text((hx, hy), header_text, font=header_font, fill=255)
+
+        draw.line(
+            [(header_inset, header_height), (width - header_inset, header_height)],
+            fill=0,
+            width=2,
+        )
+        draw.line(
+            [(header_inset, header_height + 4), (width - header_inset, header_height + 4)],
+            fill=0,
+            width=1,
+        )
+
+        time_w, time_h = self._get_text_size(draw, time_str, self.time_font)
+        date_w, date_h = self._get_text_size(draw, date_str, self.date_font)
+
+        time_x = (width - time_w) // 2
+        time_y = header_height + 24
+
+        date_x = (width - date_w) // 2
+        date_y = time_y + time_h + 20
+
+        draw.text((time_x, time_y), time_str, font=self.time_font, fill=0)
+        draw.text((date_x, date_y), date_str, font=self.date_font, fill=0)
+
+        card_top = date_y + date_h + 30
+        card_height = 170
+        card_left = body_padding
+        card_right = width - body_padding
+        card_bottom = min(card_top + card_height, height - body_padding)
+
+        draw.rounded_rectangle(
+            [(card_left, card_top), (card_right, card_bottom)],
+            radius=16,
+            outline=0,
+            width=2,
+        )
+
+        label_font = self.fonts.get("default")
+        value_font = self.fonts.get("large", self.fonts.get("default"))
+
+        temps = [
+            self._format_temperature(self.weather.get("current"), fallback="--"),
+            self._format_temperature(self.weather.get("high"), fallback="--"),
+            self._format_temperature(self.weather.get("low"), fallback="--"),
+        ]
+        labels = ["Now", "High", "Low"]
+
+        col_width = (x1 - x0) // 3
+        col_centers = [x0 + col_width * i + col_width // 2 for i in range(3)]
+        content_top = y0 + 18
+
+        for idx, (label, value) in enumerate(zip(labels, temps)):
+            lw, lh = self._get_text_size(draw, label, label_font)
+            vw, vh = self._get_text_size(draw, value, value_font)
+            cx = col_centers[idx]
+            draw.text((cx - lw // 2, content_top), label, font=label_font, fill=text_fill)
+            draw.text((cx - vw // 2, content_top + lh + 8), value, font=value_font, fill=text_fill)
+
+        draw.line([(x0 + col_width, y0 + 10), (x0 + col_width, y1 - 10)], fill=text_fill, width=1)
+        draw.line([(x0 + 2 * col_width, y0 + 10), (x0 + 2 * col_width, y1 - 10)], fill=text_fill, width=1)
+
+        if self.last_weather_fetch:
+            age = datetime.now() - self.last_weather_fetch
+            minutes = int(age.total_seconds() // 60)
+            updated_text = f"Updated {minutes}m ago"
+            footer_font = self.fonts.get("small", label_font)
+            fw, fh = self._get_text_size(draw, updated_text, footer_font)
+            draw.text((x1 - fw - 10, y1 - fh - 8), updated_text, font=footer_font, fill=text_fill)
+
+    def render(self, width: int = 800, height: int = 480, **kwargs) -> Image.Image:
+        image = Image.new("1", (width, height), 255)
+        draw = ImageDraw.Draw(image)
+
+        layout = self._resolve_layout(kwargs.get("layout"))
+        slots = self._layout_slots(layout, width, height)
+
+        now = datetime.now()
+        fallback_box = (0, 0, width, height)
+        primary_box = self._pick_slot(slots, ("main", "primary", "row1_left", "top_left", "a"), fallback_box)
+        secondary_box = None
+        for key in ("secondary", "row1_right", "top_right", "bottom_left", "bottom_right", "b", "c", "d", "e"):
+            if key in slots:
+                secondary_box = slots[key]
+                break
+
+        header_text = self.location_label or "Today"
+        last_text_y = self._draw_time_card(draw, primary_box, now, header_text)
+
+        if secondary_box:
+            self._draw_weather_card(draw, secondary_box, invert=layout.compact)
+        else:
+            _, y0, x1, _ = primary_box
+            weather_area = (primary_box[0], last_text_y + 18, x1, height - 10)
+            self._draw_weather_card(draw, weather_area, top_pad=0, invert=False)
+
+        return image
+
     def _resolve_layout(self, layout_hint: Optional[Any]) -> LayoutPreset:
         if isinstance(layout_hint, LayoutPreset):
             return layout_hint
@@ -128,12 +252,12 @@ class Module:
         header_text: str,
     ) -> int:
         x0, y0, x1, y1 = self._inset_box(box, 12)
-        draw.rounded_rectangle([(x0, y0), (x1, y1)], radius=18, fill=0)
+        draw.rounded_rectangle([(x0, y0), (x1, y1)], radius=18, outline=0, width=2)
 
         header_font = self.fonts.get("large", self.fonts.get("default"))
         header_w, header_h = self._get_text_size(draw, header_text, header_font)
         header_y = y0 + 12
-        draw.text(((x0 + x1 - header_w) // 2, header_y), header_text, font=header_font, fill=255)
+        draw.text(((x0 + x1 - header_w) // 2, header_y), header_text, font=header_font, fill=0)
 
         time_str = now.strftime(self.time_format)
         date_str = now.strftime(self.date_format)
@@ -144,8 +268,8 @@ class Module:
         time_y = header_y + header_h + 14
         date_y = time_y + time_h + 16
 
-        draw.text((center_x - time_w // 2, time_y), time_str, font=self.time_font, fill=255)
-        draw.text((center_x - date_w // 2, date_y), date_str, font=self.date_font, fill=255)
+        draw.text((center_x - time_w // 2, time_y), time_str, font=self.time_font, fill=0)
+        draw.text((center_x - date_w // 2, date_y), date_str, font=self.date_font, fill=0)
 
         return date_y + date_h
 
@@ -159,9 +283,9 @@ class Module:
         x0, y0, x1, y1 = self._inset_box(box, 12)
         if top_pad:
             y0 = max(y0, y0 + top_pad)
-        bg_fill = 0 if invert else 255
+        bg_fill = 0 if invert else None
         text_fill = 255 if invert else 0
-        draw.rounded_rectangle([(x0, y0), (x1, y1)], radius=16, outline=0, width=2, fill=bg_fill if invert else None)
+        draw.rounded_rectangle([(x0, y0), (x1, y1)], radius=16, outline=0, width=2, fill=bg_fill)
 
         label_font = self.fonts.get("default")
         value_font = self.fonts.get("large", self.fonts.get("default"))
@@ -196,14 +320,16 @@ class Module:
             draw.text((x1 - fw - 10, y1 - fh - 8), updated_text, font=footer_font, fill=text_fill)
 
     def render(self, width: int = 800, height: int = 480, **kwargs) -> Image.Image:
+        layout = self._resolve_layout(kwargs.get("layout"))
+        if layout.name == "full":
+            return self._render_full(width, height)
+
         image = Image.new("1", (width, height), 255)
         draw = ImageDraw.Draw(image)
 
-        layout = self._resolve_layout(kwargs.get("layout"))
-        slots = self._layout_slots(layout, width, height)
-
         now = datetime.now()
         fallback_box = (0, 0, width, height)
+        slots = self._layout_slots(layout, width, height)
         primary_box = self._pick_slot(slots, ("main", "primary", "row1_left", "top_left", "a"), fallback_box)
         secondary_box = None
         for key in ("secondary", "row1_right", "top_right", "bottom_left", "bottom_right", "b", "c", "d", "e"):
