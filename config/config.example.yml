@@ -28,6 +28,7 @@ modules:
       base_url: "http://192.168.xx.yy:9000"     # or whatever you're using as MEALIE_BASE_URL
       api_token: "eyJhbRitE2oS2jl1EtGPk"        # your token
       refresh_seconds: 3600                     # once per hour
+      target_eat_time: "18:30"                  # when dinner is expected to be ready
 
 api_tokens:
   weather: "CHANGE_ME"
