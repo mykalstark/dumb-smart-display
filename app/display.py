@@ -7,15 +7,23 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 class DisplayDriver(Protocol):
+    width: int
+    height: int
+
     def render_text(self, text: str) -> None: ...
 
     def render_image(self, image: object) -> None: ...
 
 
 class SimulatorDisplayDriver:
-    def __init__(self, rotation: int = 0) -> None:
+    def __init__(self, rotation: int = 0, width: int = 800, height: int = 480) -> None:
         self.rotation = rotation
-        print("[Display] Simulator driver initialized (rotation=%s)." % rotation)
+        self.width = width
+        self.height = height
+        print(
+            "[Display] Simulator driver initialized "
+            f"(rotation={rotation}, size={width}x{height})."
+        )
 
     def render_text(self, text: str) -> None:
         print("========== DISPLAY (SIM) ==========")

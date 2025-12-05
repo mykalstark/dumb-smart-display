@@ -76,6 +76,8 @@ class Module:
         time_str = now.strftime(self.time_format)
         date_str = now.strftime(self.date_format)
 
+        header_text = self.location_label or "Today"
+
         header_height = int(height * 0.22)
         header_inset = 24
         body_padding = 32
@@ -141,6 +143,8 @@ class Module:
         ]
         labels = ["Now", "High", "Low"]
 
+        x0, y0, x1, y1 = card_left, card_top, card_right, card_bottom
+        text_fill = 0
         col_width = (x1 - x0) // 3
         col_centers = [x0 + col_width * i + col_width // 2 for i in range(3)]
         content_top = y0 + 18
@@ -162,32 +166,6 @@ class Module:
             footer_font = self.fonts.get("small", label_font)
             fw, fh = self._get_text_size(draw, updated_text, footer_font)
             draw.text((x1 - fw - 10, y1 - fh - 8), updated_text, font=footer_font, fill=text_fill)
-
-    def render(self, width: int = 800, height: int = 480, **kwargs) -> Image.Image:
-        image = Image.new("1", (width, height), 255)
-        draw = ImageDraw.Draw(image)
-
-        layout = self._resolve_layout(kwargs.get("layout"))
-        slots = self._layout_slots(layout, width, height)
-
-        now = datetime.now()
-        fallback_box = (0, 0, width, height)
-        primary_box = self._pick_slot(slots, ("main", "primary", "row1_left", "top_left", "a"), fallback_box)
-        secondary_box = None
-        for key in ("secondary", "row1_right", "top_right", "bottom_left", "bottom_right", "b", "c", "d", "e"):
-            if key in slots:
-                secondary_box = slots[key]
-                break
-
-        header_text = self.location_label or "Today"
-        last_text_y = self._draw_time_card(draw, primary_box, now, header_text)
-
-        if secondary_box:
-            self._draw_weather_card(draw, secondary_box, invert=layout.compact)
-        else:
-            _, y0, x1, _ = primary_box
-            weather_area = (primary_box[0], last_text_y + 18, x1, height - 10)
-            self._draw_weather_card(draw, weather_area, top_pad=0, invert=False)
 
         return image
 
