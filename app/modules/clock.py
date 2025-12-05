@@ -89,7 +89,6 @@ class Module:
             fill=0,
         )
 
-        header_text = self.location_label or "Today"
         header_font = self.fonts.get("large", self.fonts.get("default"))
         hw, hh = self._get_text_size(draw, header_text, header_font)
         hx = (width - hw) // 2
@@ -142,46 +141,53 @@ class Module:
         ]
         labels = ["Now", "High", "Low"]
 
-        col_width = (card_right - card_left) // 3
-        col_centers = [card_left + col_width * i + col_width // 2 for i in range(3)]
-        card_content_top = card_top + 24
+        col_width = (x1 - x0) // 3
+        col_centers = [x0 + col_width * i + col_width // 2 for i in range(3)]
+        content_top = y0 + 18
 
         for idx, (label, value) in enumerate(zip(labels, temps)):
             lw, lh = self._get_text_size(draw, label, label_font)
             vw, vh = self._get_text_size(draw, value, value_font)
             cx = col_centers[idx]
-            draw.text((cx - lw // 2, card_content_top), label, font=label_font, fill=0)
-            draw.text(
-                (cx - vw // 2, card_content_top + lh + 10),
-                value,
-                font=value_font,
-                fill=0,
-            )
+            draw.text((cx - lw // 2, content_top), label, font=label_font, fill=text_fill)
+            draw.text((cx - vw // 2, content_top + lh + 8), value, font=value_font, fill=text_fill)
 
-        draw.line(
-            [(card_left + col_width, card_top + 12), (card_left + col_width, card_bottom - 12)],
-            fill=0,
-            width=1,
-        )
-        draw.line(
-            [
-                (card_left + 2 * col_width, card_top + 12),
-                (card_left + 2 * col_width, card_bottom - 12),
-            ],
-            fill=0,
-            width=1,
-        )
+        draw.line([(x0 + col_width, y0 + 10), (x0 + col_width, y1 - 10)], fill=text_fill, width=1)
+        draw.line([(x0 + 2 * col_width, y0 + 10), (x0 + 2 * col_width, y1 - 10)], fill=text_fill, width=1)
 
         if self.last_weather_fetch:
             age = datetime.now() - self.last_weather_fetch
             minutes = int(age.total_seconds() // 60)
-            updated_text = f"Weather updated {minutes}m ago"
+            updated_text = f"Updated {minutes}m ago"
             footer_font = self.fonts.get("small", label_font)
             fw, fh = self._get_text_size(draw, updated_text, footer_font)
-            fx = width - body_padding - fw
-            fy = card_bottom + 12
-            if fy + fh < height - body_padding:
-                draw.text((fx, fy), updated_text, font=footer_font, fill=0)
+            draw.text((x1 - fw - 10, y1 - fh - 8), updated_text, font=footer_font, fill=text_fill)
+
+    def render(self, width: int = 800, height: int = 480, **kwargs) -> Image.Image:
+        image = Image.new("1", (width, height), 255)
+        draw = ImageDraw.Draw(image)
+
+        layout = self._resolve_layout(kwargs.get("layout"))
+        slots = self._layout_slots(layout, width, height)
+
+        now = datetime.now()
+        fallback_box = (0, 0, width, height)
+        primary_box = self._pick_slot(slots, ("main", "primary", "row1_left", "top_left", "a"), fallback_box)
+        secondary_box = None
+        for key in ("secondary", "row1_right", "top_right", "bottom_left", "bottom_right", "b", "c", "d", "e"):
+            if key in slots:
+                secondary_box = slots[key]
+                break
+
+        header_text = self.location_label or "Today"
+        last_text_y = self._draw_time_card(draw, primary_box, now, header_text)
+
+        if secondary_box:
+            self._draw_weather_card(draw, secondary_box, invert=layout.compact)
+        else:
+            _, y0, x1, _ = primary_box
+            weather_area = (primary_box[0], last_text_y + 18, x1, height - 10)
+            self._draw_weather_card(draw, weather_area, top_pad=0, invert=False)
 
         return image
 

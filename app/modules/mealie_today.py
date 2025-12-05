@@ -220,15 +220,17 @@ class Module:
 
         meal_text = str(self.meal_details.get("name") or "No dinner planned")
         meal_font = self.fonts.get("large", self.fonts.get("default"))
-        body_y_start = header_height + 12
-        max_text_width = width - (body_padding * 2)
-        lines = self._wrap_text(draw, meal_text, meal_font, max_text_width)
 
-        current_y = body_y_start + 12
+        hw, hh = self._get_text_size(draw, header_text, header_font)
+        header_y = y0 + 12
+        draw.text(((x0 + x1 - hw) // 2, header_y), header_text, font=header_font, fill=255)
+
+        max_width = x1 - x0 - 24
+        lines = self._wrap_text(draw, meal_text, meal_font, max_width)
+        current_y = header_y + hh + 14
         for line in lines:
             lw, lh = self._get_text_size(draw, line, meal_font)
-            lx = (width - lw) // 2
-            draw.text((lx, current_y), line, font=meal_font, fill=0)
+            draw.text(((x0 + x1 - lw) // 2, current_y), line, font=meal_font, fill=255)
             current_y += lh + 6
 
         card_top = current_y + 10
@@ -237,26 +239,26 @@ class Module:
         card_right = width - body_padding
         card_bottom = min(card_top + card_height, height - body_padding)
 
-        draw.rounded_rectangle(
-            [(card_left, card_top), (card_right, card_bottom)],
-            radius=16,
-            outline=0,
-            width=2,
-        )
+    def _draw_time_card(self, draw: ImageDraw.Draw, box: Tuple[int, int, int, int], invert: bool = False) -> None:
+        x0, y0, x1, y1 = self._inset_box(box, 12)
+        bg_fill = 0 if invert else 255
+        text_fill = 255 if invert else 0
+
+        draw.rounded_rectangle([(x0, y0), (x1, y1)], radius=16, outline=0, width=2, fill=bg_fill if invert else None)
 
         label_font = self.fonts.get("default")
-        value_font = self.fonts.get("default")
+        value_font = self.fonts.get("large", self.fonts.get("default"))
 
         prep_text = self._format_minutes(self.meal_details.get("prep"))
         cook_text = self._format_minutes(self.meal_details.get("cook"))
         total_text = self._format_minutes(self.meal_details.get("total"))
 
-        col_width = (card_right - card_left) // 3
-        col_centers = [card_left + col_width * i + col_width // 2 for i in range(3)]
+        col_width = (x1 - x0) // 3
+        col_centers = [x0 + col_width * i + col_width // 2 for i in range(3)]
         labels = ["Prep", "Cook", "Total"]
         values = [prep_text, cook_text, total_text]
 
-        card_content_top = card_top + 24
+        top = y0 + 20
         for idx, (label, value) in enumerate(zip(labels, values)):
             lw, lh = self._get_text_size(draw, label, label_font)
             vw, vh = self._get_text_size(draw, value, value_font)
@@ -280,8 +282,42 @@ class Module:
                 (card_left + 2 * col_width, card_bottom - 12),
             ],
             fill=0,
-            width=1,
         )
+        draw.text((cx + padding_x, cy + padding_y), text, font=banner_font, fill=255)
+
+    # ------------------------
+    # Main Render
+    # ------------------------
+    def render(self, width: int = 800, height: int = 480, **kwargs) -> Image.Image:
+        image = Image.new("1", (width, height), 255)
+        draw = ImageDraw.Draw(image)
+
+        layout = self._resolve_layout(kwargs.get("layout"))
+        slots = self._layout_slots(layout, width, height)
+
+        fallback_box = (0, 0, width, height)
+        title_box = self._pick_slot(slots, ("main", "primary", "row1_left", "top_left", "a"), fallback_box)
+        details_box = None
+        footer_box = None
+
+        for key in ("secondary", "row1_right", "top_right", "bottom_left", "bottom_right", "b", "c"):
+            if key in slots:
+                details_box = slots[key]
+                break
+
+        for key in ("tertiary", "row2_left", "row2_center", "row2_right", "footer_left", "footer_right", "d", "e"):
+            if key in slots:
+                footer_box = slots[key]
+                break
+
+        meal_text = str(self.meal_details.get("name") or "No dinner planned")
+        bottom_of_title = self._draw_title_card(draw, title_box, meal_text)
+
+        if details_box:
+            self._draw_time_card(draw, details_box, invert=layout.compact)
+        else:
+            stacked_box = (title_box[0], bottom_of_title + 10, title_box[2], title_box[3])
+            self._draw_time_card(draw, stacked_box)
 
         start_by = self._compute_start_time(self.meal_details.get("total"))
         target_time = self._parse_target_time()
@@ -293,26 +329,8 @@ class Module:
         else:
             banner_text = f"Plan to eat by {target_label}"
 
-        banner_font = self.fonts.get("default", self.fonts.get("small"))
-        bw, bh = self._get_text_size(draw, banner_text, banner_font)
-        banner_padding_x = 24
-        banner_padding_y = 12
-        banner_left = (width - (bw + banner_padding_x * 2)) // 2
-        banner_top = card_bottom + 20
-        banner_right = banner_left + bw + banner_padding_x * 2
-        banner_bottom = banner_top + bh + banner_padding_y * 2
-
-        draw.rounded_rectangle(
-            [(banner_left, banner_top), (banner_right, banner_bottom)],
-            radius=14,
-            fill=0,
-        )
-        draw.text(
-            (banner_left + banner_padding_x, banner_top + banner_padding_y),
-            banner_text,
-            font=banner_font,
-            fill=255,
-        )
+        banner_area = footer_box or details_box or title_box
+        self._draw_banner(draw, banner_area, banner_text)
 
         return image
 
