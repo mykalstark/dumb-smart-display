@@ -111,7 +111,9 @@ class Module:
             if entry.get("entryType") == "dinner":
                 recipe = entry.get("recipe") or {}
                 prep = self._parse_duration_minutes(recipe.get("prepTime"))
-                cook = self._parse_duration_minutes(recipe.get("cookTime"))
+                cook = self._parse_duration_minutes(
+                    recipe.get("performTime") or recipe.get("cookTime")
+                )
                 total = self._parse_duration_minutes(recipe.get("totalTime"))
 
                 if total is None and prep is not None and cook is not None:
