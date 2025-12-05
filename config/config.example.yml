@@ -23,6 +23,11 @@ modules:
       date_format: "%a %d"     # Short date (e.g. Fri 26)
       time_size: 120           # Even bigger time
       date_size: 50            # Bigger date
+      latitude: 40.7128        # Required for weather lookups
+      longitude: -74.0060      # Required for weather lookups
+      temperature_unit: "fahrenheit" # or "celsius"
+      refresh_seconds: 1800    # Weather refresh cadence
+      location_name: "Home"    # Header label for the card
     mealie_today:
       enabled: true
       base_url: "http://192.168.xx.yy:9000"     # or whatever you're using as MEALIE_BASE_URL
