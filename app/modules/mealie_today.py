@@ -217,6 +217,69 @@ class Module:
         except AttributeError:
             return draw.textsize(text, font=font)
 
+    def _resize_font(self, font: Any, size: int) -> Any:
+        """Return a resized version of the provided font when possible."""
+
+        try:
+            return font.font_variant(size=size)
+        except Exception:
+            pass
+
+        font_path = getattr(font, "path", None)
+        if font_path:
+            try:
+                return ImageFont.truetype(font_path, size)
+            except Exception:
+                pass
+
+        return font
+
+    def _fit_text_lines(
+        self,
+        draw: ImageDraw.Draw,
+        text: str,
+        base_font: Any,
+        max_width: int,
+        max_height: int,
+        *,
+        min_size: int = 12,
+        line_spacing: int = 6,
+    ) -> Tuple[Any, List[str], int]:
+        """Find the largest font size that fits the provided box.
+
+        Returns the chosen font, wrapped lines, and total height of the block.
+        """
+
+        start_size = getattr(base_font, "size", None) or 24
+
+        for size in range(start_size, min_size - 1, -2):
+            font = self._resize_font(base_font, size)
+            lines = self._wrap_text(draw, text, font, max_width)
+
+            total_height = 0
+            max_line_width = 0
+            for line in lines:
+                lw, lh = self._get_text_size(draw, line, font)
+                max_line_width = max(max_line_width, lw)
+                total_height += lh
+
+            if lines:
+                total_height += line_spacing * (len(lines) - 1)
+
+            if max_line_width <= max_width and total_height <= max_height:
+                return font, lines, total_height
+
+        fallback_font = self._resize_font(base_font, min_size) if min_size else base_font
+        lines = self._wrap_text(draw, text, fallback_font, max_width)
+        total_height = 0
+        for line in lines:
+            _, lh = self._get_text_size(draw, line, fallback_font)
+            total_height += lh
+        if lines:
+            total_height += line_spacing * (len(lines) - 1)
+
+        return fallback_font, lines, total_height
+
     def _render_full(self, width: int, height: int) -> Image.Image:
         """Classic full-screen layout prior to the preset system."""
         image = Image.new("1", (width, height), 255)
@@ -357,20 +420,50 @@ class Module:
         draw.rounded_rectangle([(x0, y0), (x1, y1)], radius=18, outline=0, width=2)
 
         header_text = "Tonight's Dinner"
-        header_font = self.fonts.get("large", self.fonts.get("default"))
-        meal_font = self.fonts.get("large", self.fonts.get("default"))
+        base_header_font = self.fonts.get("large", self.fonts.get("default"))
+        base_meal_font = self.fonts.get("large", self.fonts.get("default"))
 
-        hw, hh = self._get_text_size(draw, header_text, header_font)
-        header_y = y0 + 12
-        draw.text(((x0 + x1 - hw) // 2, header_y), header_text, font=header_font, fill=0)
+        inner_padding = 14
+        content_x0 = x0 + inner_padding
+        content_x1 = x1 - inner_padding
+        content_y0 = y0 + inner_padding
+        content_y1 = y1 - inner_padding
 
-        max_width = x1 - x0 - 24
-        lines = self._wrap_text(draw, meal_text, meal_font, max_width)
-        current_y = header_y + hh + 14
-        for line in lines:
+        header_max_height = max(int((y1 - y0) * 0.25), 32)
+        header_font, header_lines, header_height = self._fit_text_lines(
+            draw,
+            header_text,
+            base_header_font,
+            content_x1 - content_x0,
+            header_max_height,
+            min_size=18,
+            line_spacing=4,
+        )
+
+        header_line = header_lines[0] if header_lines else ""
+        hw, hh = self._get_text_size(draw, header_line, header_font)
+        header_y = content_y0
+        draw.text(((content_x0 + content_x1 - hw) // 2, header_y), header_line, font=header_font, fill=0)
+
+        meal_area_top = header_y + header_height + 14
+        meal_area_bottom = content_y1
+        meal_area_height = max(meal_area_bottom - meal_area_top, 20)
+
+        meal_font, meal_lines, meal_block_height = self._fit_text_lines(
+            draw,
+            meal_text,
+            base_meal_font,
+            content_x1 - content_x0,
+            meal_area_height,
+            min_size=16,
+            line_spacing=8,
+        )
+
+        current_y = meal_area_top + max((meal_area_height - meal_block_height) // 2, 0)
+        for line in meal_lines:
             lw, lh = self._get_text_size(draw, line, meal_font)
-            draw.text(((x0 + x1 - lw) // 2, current_y), line, font=meal_font, fill=0)
-            current_y += lh + 6
+            draw.text(((content_x0 + content_x1 - lw) // 2, current_y), line, font=meal_font, fill=0)
+            current_y += lh + 8
 
         return current_y
 
