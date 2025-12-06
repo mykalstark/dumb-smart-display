@@ -22,6 +22,10 @@ def _import_button():
         return None
 
 
+# Hold references to button objects so they are not garbage collected
+_BUTTONS = []
+
+
 def init_buttons(
     display: Optional[object] = None,
     simulate: bool = False,
@@ -50,5 +54,9 @@ def init_buttons(
     b1.when_pressed = lambda: _dispatch("back")
     b2.when_pressed = lambda: _dispatch("refresh")
     b3.when_pressed = lambda: _dispatch("next")
+
+    # Store references to prevent garbage collection, which would drop callbacks
+    global _BUTTONS
+    _BUTTONS = [b1, b2, b3]
 
     log("Buttons initialized.")
