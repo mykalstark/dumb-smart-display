@@ -156,6 +156,12 @@ class Module:
                     }
             self.last_fetch = now
 
+    def force_refresh(self) -> None:
+        """Immediately fetch the latest meal plan data."""
+
+        self.last_fetch = None
+        self.tick()
+
     def handle_button(self, event: str) -> None:
         # Action handling is not yet implemented for this module.
         return
