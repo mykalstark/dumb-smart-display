@@ -54,25 +54,37 @@ class Module:
             log.warning("Mealie fetch error: %s", e)
             return None
 
-    def _parse_duration_minutes(self, value: Any) -> Optional[int]:
+    def _parse_duration_minutes(
+        self, value: Any, *, assume_hours_if_small: bool = False
+    ) -> Optional[int]:
         """
         Convert various time formats to minutes.
 
         Mealie may return times as integers (minutes), strings like "45",
         "45m", or ISO8601 durations like "PT1H15M". We handle the common
         variations and fall back to None when we can't parse.
+
+        When `assume_hours_if_small` is True, plain numeric values that are
+        12 or less are treated as hours instead of minutes to account for
+        Mealie's missing cook-time unit.
         """
         if value is None:
             return None
 
         if isinstance(value, (int, float)):
-            return int(value)
+            numeric_value = int(value)
+            if assume_hours_if_small and numeric_value <= 12:
+                return numeric_value * 60
+            return numeric_value
 
         if isinstance(value, str):
             stripped = value.strip().upper()
             # Simple numeric string ("45")
             if stripped.isdigit():
-                return int(stripped)
+                numeric_value = int(stripped)
+                if assume_hours_if_small and numeric_value <= 12:
+                    return numeric_value * 60
+                return numeric_value
 
             # ISO8601 duration (PT#H#M#S)
             if stripped.startswith("PT"):
@@ -116,8 +128,11 @@ class Module:
             if entry.get("entryType") == "dinner":
                 recipe = entry.get("recipe") or {}
                 prep = self._parse_duration_minutes(recipe.get("prepTime"))
+
+                cook_source = recipe.get("cookTime") or recipe.get("performTime")
                 cook = self._parse_duration_minutes(
-                    recipe.get("performTime") or recipe.get("cookTime")
+                    cook_source,
+                    assume_hours_if_small=True,
                 )
                 total = self._parse_duration_minutes(recipe.get("totalTime"))
 
