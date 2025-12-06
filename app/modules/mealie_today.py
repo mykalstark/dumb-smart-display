@@ -143,8 +143,15 @@ class Module:
                     recipe.get("totalTime"), assume_hours_if_small=True
                 )
 
-                if total is None and prep is not None and cook is not None:
-                    total = prep + cook
+                if cook is not None:
+                    prep_minutes = prep or 0
+
+                    # When cook time is assumed to be in hours (e.g., "2" -> 2h),
+                    # prefer a total that at least includes that corrected value.
+                    if total is None:
+                        total = prep_minutes + cook
+                    elif total < cook:
+                        total = prep_minutes + cook
 
                 return {
                     "name": recipe.get("name") or entry.get("title"),
