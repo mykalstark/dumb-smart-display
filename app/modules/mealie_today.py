@@ -139,7 +139,9 @@ class Module:
                     cook_source,
                     assume_hours_if_small=True,
                 )
-                total = self._parse_duration_minutes(recipe.get("totalTime"))
+                total = self._parse_duration_minutes(
+                    recipe.get("totalTime"), assume_hours_if_small=True
+                )
 
                 if total is None and prep is not None and cook is not None:
                     total = prep + cook
@@ -327,14 +329,18 @@ class Module:
             parts.append(f"{minutes}m")
         return " ".join(parts)
 
-    def _compute_start_time(self, total_minutes: Optional[int]) -> Optional[datetime.datetime]:
-        if total_minutes is None:
+    def _compute_start_time(self, total_minutes: Optional[Any]) -> Optional[datetime.datetime]:
+        parsed_total = self._parse_duration_minutes(
+            total_minutes, assume_hours_if_small=True
+        )
+
+        if parsed_total is None:
             return None
 
         target_time = self._parse_target_time()
         today = datetime.datetime.now().date()
         target_dt = datetime.datetime.combine(today, target_time)
-        return target_dt - datetime.timedelta(minutes=total_minutes)
+        return target_dt - datetime.timedelta(minutes=parsed_total)
 
     def _format_clock(self, dt_obj: datetime.datetime) -> str:
         return dt_obj.strftime("%I:%M %p").lstrip("0")
