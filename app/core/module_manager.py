@@ -118,12 +118,29 @@ class ModuleManager:
     # ------------------------------------------------------------------
     # Button routing & background work
     # ------------------------------------------------------------------
+    def refresh_current(self) -> Optional[DisplayModule]:
+        """Force the active module to refresh its data if possible."""
+
+        module = self.current_module()
+        if module is None:
+            return None
+
+        refresher = getattr(module, "force_refresh", None)
+        if callable(refresher):
+            refresher()
+        else:
+            module.tick()
+
+        return module
+
     def route_button_event(self, event: str) -> Optional[DisplayModule]:
-        """Handle a logical button event (prev/next/action)."""
+        """Handle a logical button event (back/refresh/next)."""
         if event == "next":
             return self.activate_next()
-        if event == "prev":
+        if event in {"prev", "back"}:
             return self.prev_module()
+        if event == "refresh":
+            return self.refresh_current()
         if event == "action":
             module = self.current_module()
             if module and hasattr(module, "handle_button"):

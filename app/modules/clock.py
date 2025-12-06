@@ -338,6 +338,15 @@ class Module:
             self._fetch_weather()
             self.last_weather_fetch = now
 
+    def force_refresh(self) -> None:
+        """Immediately fetch weather data regardless of the schedule."""
+
+        if self.latitude is None or self.longitude is None:
+            return
+
+        self._fetch_weather()
+        self.last_weather_fetch = datetime.now()
+
     def _fetch_weather(self) -> None:
         base_url = "https://api.open-meteo.com/v1/forecast"
         unit = "fahrenheit" if str(self.temperature_unit).lower().startswith("f") else "celsius"

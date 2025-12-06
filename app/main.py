@@ -92,8 +92,23 @@ def main() -> None:
 
     display = build_display(config, force_simulate=args.simulate)
 
+    def render_active_module() -> None:
+        module = manager.current_module()
+        if module is None:
+            display.render_text("No modules enabled.")
+            return
+
+        try:
+            w = display.driver.width
+            h = display.driver.height
+            content = module.render(width=w, height=h)
+            display.render(content)
+        except Exception as exc:
+            print(f"[MAIN] Error rendering module {module}: {exc}", flush=True)
+
     def on_button(event: str) -> None:
         manager.route_button_event(event)
+        render_active_module()
 
     init_buttons(display, simulate=display.simulate, on_event=on_button)
 
@@ -103,24 +118,7 @@ def main() -> None:
 
     try:
         while True:
-            module = manager.current_module()
-            if module is None:
-                display.render_text("No modules enabled.")
-            else:
-                try:
-                    # 3. GET WIDTH/HEIGHT from the display driver
-                    # The display object wraps the driver, which knows the size.
-                    w = display.driver.width
-                    h = display.driver.height
-
-                    # 4. PASS WIDTH/HEIGHT to render
-                    # We use **kwargs style implies modules can accept what they want
-                    # but specifically, we pass width=w, height=h
-                    content = module.render(width=w, height=h)
-                    
-                    display.render(content)
-                except Exception as exc:
-                    print(f"[MAIN] Error rendering module {module}: {exc}", flush=True)
+            render_active_module()
 
             manager.tick_modules()
             cycle_count += 1

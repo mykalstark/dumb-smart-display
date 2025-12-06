@@ -46,8 +46,9 @@ def init_buttons(
         if on_event:
             on_event(event)
 
-    b1.when_pressed = lambda: _dispatch("prev")
-    b2.when_pressed = lambda: _dispatch("next")
-    b3.when_pressed = lambda: _dispatch("action")
+    # Physical layout (left-to-right): back, refresh, next
+    b1.when_pressed = lambda: _dispatch("back")
+    b2.when_pressed = lambda: _dispatch("refresh")
+    b3.when_pressed = lambda: _dispatch("next")
 
     log("Buttons initialized.")
