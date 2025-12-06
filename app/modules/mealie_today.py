@@ -128,8 +128,10 @@ class Module:
             if entry.get("entryType") == "dinner":
                 recipe = entry.get("recipe") or {}
                 prep = self._parse_duration_minutes(recipe.get("prepTime"))
+
+                cook_source = recipe.get("cookTime") or recipe.get("performTime")
                 cook = self._parse_duration_minutes(
-                    recipe.get("performTime") or recipe.get("cookTime"),
+                    cook_source,
                     assume_hours_if_small=True,
                 )
                 total = self._parse_duration_minutes(recipe.get("totalTime"))
