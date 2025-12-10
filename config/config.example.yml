@@ -17,6 +17,7 @@ modules:
   enabled:
     - clock
     - mealie_today
+    - ticktick
   settings:
     clock:
       time_format: "%I:%M %p"  # 12-hour format (e.g. 02:30 PM)
@@ -34,6 +35,19 @@ modules:
       api_token: "eyJhbRitE2oS2jl1EtGPk"        # your token
       refresh_seconds: 3600                     # once per hour
       target_eat_time: "18:30"                  # when dinner is expected to be ready
+    ticktick:
+      refresh_seconds: 900
+      time_format: "%H:%M"
+      max_items_per_day: 6
+      max_title_length: 60
+      show_project_names: true
+      api:
+        base_url: "https://api.ticktick.com/api/v2"
+        token_url: "https://ticktick.com/oauth/token"
+        client_id: "CHANGE_ME"
+        client_secret: "CHANGE_ME"
+        refresh_token: "CHANGE_ME"
+        timezone: "America/Denver"
 
 api_tokens:
   weather: "CHANGE_ME"
