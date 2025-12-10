@@ -42,7 +42,9 @@ modules:
       max_title_length: 60
       show_project_names: true
       api:
-        base_url: "https://api.ticktick.com/api/v2"
+        # The TickTick Open API uses the /open/v1 base URL; the older /api/v2 routes
+        # will return 404s even with a valid token.
+        base_url: "https://api.ticktick.com/open/v1"
         # The display uses a pre-issued access token directly; there is no refresh flow.
         access_token: "CHANGE_ME"
         # (Optional) Keep your TickTick client credentials here for reference when you

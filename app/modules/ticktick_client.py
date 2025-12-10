@@ -40,7 +40,10 @@ class TickTickClient:
             log.warning("TickTick timezone '%s' invalid. Falling back to UTC.", tz_name)
             self.timezone = ZoneInfo("UTC")
 
-        self.base_url = self.config.get("base_url", "https://api.ticktick.com/api/v2").rstrip("/")
+        # The official TickTick Open API uses the /open/v1 base path for all endpoints.
+        # Using the legacy /api/v2 routes will return 404s even with a valid token,
+        # which surfaces to the user as "TickTick unavailable".
+        self.base_url = self.config.get("base_url", "https://api.ticktick.com/open/v1").rstrip("/")
         self.access_token = self.config.get("access_token", "")
         self.access_token_expires_at = self.config.get("access_token_expires_at")
 
@@ -125,7 +128,7 @@ class TickTickClient:
         ):
             return self._projects_cache
 
-        payload = self._request("GET", "projects")
+        payload = self._request("GET", "project")
         mapping = {}
         if isinstance(payload, list):
             for entry in payload:
@@ -141,7 +144,8 @@ class TickTickClient:
     def get_open_tasks_for_range(self, start: dt.date, end: dt.date) -> List[TaskItem]:
         """Return open tasks whose due/start dates fall between start and end (inclusive)."""
 
-        raw_tasks = self._request("GET", "tasks")
+        params = {"startDate": start.isoformat(), "endDate": end.isoformat()}
+        raw_tasks = self._request("GET", "task", params=params)
         project_lookup = self.get_projects_map()
         normalized: List[TaskItem] = []
 
