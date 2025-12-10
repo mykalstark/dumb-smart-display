@@ -11,6 +11,10 @@ import requests
 
 log = logging.getLogger(__name__)
 
+EXPIRED_MESSAGE = (
+    "TickTick token expired. Please re-run dumb-smart-display/scripts $ python ticktick_oauth.py  to get a new access_token."
+)
+
 
 @dataclass
 class TaskItem:
@@ -37,10 +41,8 @@ class TickTickClient:
             self.timezone = ZoneInfo("UTC")
 
         self.base_url = self.config.get("base_url", "https://api.ticktick.com/api/v2").rstrip("/")
-        self.token_url = self.config.get("token_url", "https://ticktick.com/oauth/token")
-        self.client_id = self.config.get("client_id", "")
-        self.client_secret = self.config.get("client_secret", "")
-        self.refresh_token = self.config.get("refresh_token", "")
+        self.access_token = self.config.get("access_token", "")
+        self.access_token_expires_at = self.config.get("access_token_expires_at")
 
         self._session = requests.Session()
         self._access_token: Optional[str] = None
@@ -74,29 +76,23 @@ class TickTickClient:
 
     def _ensure_token(self) -> None:
         now = dt.datetime.now(dt.timezone.utc)
-        if self._access_token and self._token_expiry and self._token_expiry > now + dt.timedelta(seconds=30):
+        if self._token_expiry and self._token_expiry <= now:
+            raise RuntimeError(EXPIRED_MESSAGE)
+
+        if self._access_token:
             return
 
-        if not self.refresh_token or not self.client_id or not self.client_secret:
-            raise RuntimeError("TickTick credentials are missing")
+        if not self.access_token:
+            raise RuntimeError("TickTick access_token is missing")
 
-        payload = {
-            "grant_type": "refresh_token",
-            "refresh_token": self.refresh_token,
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
-        }
+        self._access_token = self.access_token
 
-        resp = self._session.post(self.token_url, data=payload, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-
-        self._access_token = data.get("access_token")
-        expires_in = int(data.get("expires_in", 3600))
-        self._token_expiry = now + dt.timedelta(seconds=max(expires_in - 60, 60))
-
-        if not self._access_token:
-            raise RuntimeError("TickTick did not return an access token")
+        if self.access_token_expires_at:
+            expiry = self._parse_datetime(self.access_token_expires_at)
+            if expiry:
+                self._token_expiry = expiry.astimezone(dt.timezone.utc)
+                if self._token_expiry <= now:
+                    raise RuntimeError(EXPIRED_MESSAGE)
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         self._ensure_token()
@@ -106,8 +102,15 @@ class TickTickClient:
         headers.setdefault("Accept", "application/json")
 
         url = f"{self.base_url}/{path.lstrip('/')}"
-        resp = self._session.request(method, url, headers=headers, timeout=10, **kwargs)
-        resp.raise_for_status()
+        try:
+            resp = self._session.request(method, url, headers=headers, timeout=10, **kwargs)
+            resp.raise_for_status()
+        except requests.HTTPError as err:
+            status = err.response.status_code if err.response is not None else None
+            if status == 401:
+                raise RuntimeError(EXPIRED_MESSAGE) from err
+            raise
+
         return resp.json()
 
     # ------------------------------------------------------------------

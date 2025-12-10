@@ -43,10 +43,9 @@ modules:
       show_project_names: true
       api:
         base_url: "https://api.ticktick.com/api/v2"
-        token_url: "https://ticktick.com/oauth/token"
-        client_id: "CHANGE_ME"
-        client_secret: "CHANGE_ME"
-        refresh_token: "CHANGE_ME"
+        access_token: "CHANGE_ME"
+        # Optional: when provided, the module will warn when this timestamp passes
+        # access_token_expires_at: "2024-12-31T23:59:59Z"
         timezone: "America/Denver"
 
 api_tokens:
