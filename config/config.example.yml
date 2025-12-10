@@ -41,6 +41,8 @@ modules:
       max_items_per_day: 6
       max_title_length: 60
       show_project_names: true
+      # Optional: limit to specific project IDs. Leave empty to show all projects.
+      # project_ids: ["abc123", "def456"]
       api:
         # The TickTick Open API uses the /open/v1 base URL; the older /api/v2 routes
         # will return 404s even with a valid token.
