@@ -67,7 +67,7 @@ class Module(BaseDisplayModule):
         except Exception as exc:  # pragma: no cover - defensive
             log.warning("TickTick update failed: %s", exc)
             if isinstance(exc, RuntimeError):
-                self.error_message = "TickTick auth error"
+                self.error_message = str(exc) or "TickTick auth error"
             else:
                 self.error_message = "TickTick unavailable"
             self.today_tasks = []
