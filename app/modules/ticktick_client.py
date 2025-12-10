@@ -64,7 +64,12 @@ class TickTickClient:
         if isinstance(value, dt.datetime):
             parsed = value
         elif isinstance(value, str):
-            normalized = value.replace("Z", "+00:00")
+            normalized = value.replace("Z", "+00:00").strip()
+            # TickTick returns offsets like "+0000" without a colon; add one so
+            # ``fromisoformat`` can understand it.
+            if len(normalized) >= 5 and normalized[-3] != ":" and normalized[-5] in {"+", "-"}:
+                normalized = f"{normalized[:-2]}:{normalized[-2:]}"
+
             try:
                 parsed = dt.datetime.fromisoformat(normalized)
             except ValueError:
@@ -144,26 +149,55 @@ class TickTickClient:
     def get_open_tasks_for_range(self, start: dt.date, end: dt.date) -> List[TaskItem]:
         """Return open tasks whose due/start dates fall between start and end (inclusive)."""
 
-        params = {"startDate": start.isoformat(), "endDate": end.isoformat()}
-        raw_tasks = self._request("GET", "task", params=params)
         project_lookup = self.get_projects_map()
+        project_ids = self._project_ids_to_query(project_lookup)
         normalized: List[TaskItem] = []
 
-        if not isinstance(raw_tasks, list):
-            return normalized
+        for project_id in project_ids:
+            payload = self._request("GET", f"project/{project_id}/data")
+            if not isinstance(payload, dict):
+                continue
 
-        for task in raw_tasks:
-            if not isinstance(task, dict):
-                continue
-            item = self._normalize_task(task, project_lookup)
-            if item is None:
-                continue
-            if item.is_completed:
-                continue
-            if start <= item.date <= end:
-                normalized.append(item)
+            project_info = payload.get("project")
+            if isinstance(project_info, dict):
+                pname = project_info.get("name") or project_info.get("title")
+                if pname:
+                    project_lookup[str(project_id)] = pname
+
+            tasks_list = payload.get("tasks")
+            if not isinstance(tasks_list, list):
+                tasks_list = []
+
+            for task in tasks_list:
+                if not isinstance(task, dict):
+                    continue
+                task.setdefault("projectId", project_id)
+                item = self._normalize_task(task, project_lookup)
+                if item is None or item.is_completed:
+                    continue
+                if start <= item.date <= end:
+                    normalized.append(item)
 
         return normalized
+
+    def _project_ids_to_query(self, project_lookup: Dict[str, str]) -> List[str]:
+        configured = self.config.get("project_ids") or self.config.get("projects")
+        if configured:
+            candidates = configured
+            if not isinstance(configured, (list, tuple, set)):
+                candidates = [configured]
+
+            project_ids = []
+            for pid in candidates:
+                if pid is None:
+                    continue
+                project_id = str(pid)
+                if project_id not in project_lookup:
+                    project_lookup[project_id] = ""
+                project_ids.append(project_id)
+            return project_ids
+
+        return list(project_lookup.keys())
 
     # ------------------------------------------------------------------
     # Normalization
