@@ -43,7 +43,12 @@ modules:
       show_project_names: true
       api:
         base_url: "https://api.ticktick.com/api/v2"
+        # The display uses a pre-issued access token directly; there is no refresh flow.
         access_token: "CHANGE_ME"
+        # (Optional) Keep your TickTick client credentials here for reference when you
+        # need to generate a new access token. They are not used by the display itself.
+        # client_id: "CHANGE_ME"
+        # client_secret: "CHANGE_ME"
         # Optional: when provided, the module will warn when this timestamp passes
         # access_token_expires_at: "2024-12-31T23:59:59Z"
         timezone: "America/Denver"
