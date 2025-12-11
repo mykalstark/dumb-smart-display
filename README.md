@@ -1,173 +1,152 @@
-# **Dumb Smart Display – Project Overview**
+# Dumb Smart Display
 
-**Dumb Smart Display** is a modular Raspberry Pi–powered information display meant to act like a “smart screen” without the ecosystem lock-in, data harvesting, or cloud dependency of commercial devices. Everything is open-source, local-only, and designed for easy customization.
+**Dumb Smart Display** is a modular, Raspberry Pi-powered information dashboard designed to look great on E-Ink or LCD screens. It focuses on local control, simple Python modules, and zero-maintenance operation.
 
 The project combines:
-
-* A Raspberry Pi Zero 2 W
-* A small e-ink or LCD display
-* Three physical buttons wired to GPIO
-* Open-source Python software
-* A plug-in module system for features
-* A 3D-printed case ecosystem that can look like anything—picture frame, CRT-style shell, themed housing, etc.
-
-The goal is simple: **give users a small, always-on display that shows the info *they* want, how *they* want it, with zero cloud dependence.**
+*   **Hardware**: Raspberry Pi Zero 2 W + Waveshare E-Ink Display + Physical Buttons.
+*   **Software**: A Python-based engine that renders "Modules" to the screen.
+*   **Philosophy**: Your data, your screen, no mandatory cloud ecosystem.
 
 ---
 
-# **Core Concept**
+## Features
 
-At its heart, this is a **module-driven dashboard**.
-Each “module” is a self-contained Python component that provides:
-
-* Something to display
-* Optional background tasks
-* Optional user interaction via the buttons
-* A render function for the screen
-
-Examples of modules:
-
-* Clock
-* Weather
-* Daily meal plan (via Mealie API)
-* Calendar
-* Task list
-* Custom integrations
-* Hobby dashboards
-* Smart home sensors (local API)
-
-Users can enable/disable modules through config files.
+*   **Modular Design**: Enable/disable features via a simple YAML config.
+*   **Plug-and-Play Installation**: Automated setup script for Raspberry Pi OS.
+*   **Hardware Agnostic**: Supports Waveshare E-Ink displays (via SPI) and a built-in **Simulator** for developing on your PC.
+*   **Extensible**: Write your own modules in Python using the standard PIL (Pillow) library.
 
 ---
 
-# **Hardware Summary**
+## Included Modules
 
-* **Pi Zero 2 W** – brains of the system
-* **E-ink or LCD screen** – main output
-* **3 push buttons:**
+The following modules are built-in:
 
-  * Up → GPIO17
-  * Select → GPIO27
-  * Down → GPIO22
-* **3D-printed enclosure** – customizable
-* **Wi-Fi** for pulling modules, weather, etc.
+### 1. Clock (`clock`)
+The default home screen.
+*   **Features**: Large high-contrast time, date, and local weather (requires API key).
+*   **Layouts**: Full screen.
 
-The system is designed to survive unplug/replug without corruption, and eventually support auto-updating from GitHub.
+### 2. Mealie Today (`mealie_today`)
+Integrates with [Mealie](https://nightly.mealie.io/) (self-hosted recipe manager).
+*   **Features**: Shows tonight's dinner plan, prep/cook times, and a "START KITCHEN TIMER BY..." recommendation to ensure dinner is ready on time.
+*   **Configuration**: Requires your Mealie URL and API token.
+
+### 3. TickTick (`ticktick`)
+Integrates with [TickTick](https://ticktick.com/).
+*   **Features**: Displays tasks for "Today" and "Tomorrow" side-by-side. Support for task lists and time-blocking.
+*   **Configuration**: Requires a TickTick Open API access token.
 
 ---
 
-# **Software Architecture**
+## Hardware Setup
+
+This project is designed for the **Raspberry Pi Zero 2 W**, but runs on any Pi.
+
+**Recommended Hardware:**
+*   **Pi**: Raspberry Pi Zero 2 W (headers pre-soldered recommended).
+*   **Display**: Waveshare 7.5" E-Ink Display (Model V2 or similar).
+*   **Inputs**: 3x Push Buttons wired to GPIO.
+
+**Default Pinout (defined in `config.yml`):**
+*   **BTN1 (Up/Prev)**: GPIO 17
+*   **BTN2 (Select/Action)**: GPIO 27
+*   **BTN3 (Down/Next)**: GPIO 22
+*   **E-Ink SPI**: Standard SPI + Busy (24), RST (5), DC (25).
+
+---
+
+## Installation
+
+### 1. Prepare your Pi
+Flash **Raspberry Pi OS Lite** to your SD card. Connect to Wi-Fi and SSH in.
+
+### 2. Install the Software
+Run the following commands on your Pi:
+
+```bash
+git clone https://github.com/mykalstark/dumb-smart-display.git
+cd dumb-smart-display
+./scripts/install.sh
+```
+
+**What this does:**
+*   Installs system dependencies (Python, SPI, GPIO).
+*   Sets up a Python `venv` and installs packages.
+*   Installs the Waveshare E-Paper drivers.
+*   Sets up a `systemd` service so the display starts at boot.
+
+### 3. Configure
+Copy the example configuration to the live config file:
+
+```bash
+cp config/config.example.yml config/config.yml
+nano config/config.yml
+```
+
+Edit `config.yml` to:
+1.  Set `hardware.simulate: false` (to use the real screen).
+2.  Enable the modules you want.
+3.  Add your API tokens (Weather, Mealie, TickTick).
+
+### 4. Restart Service
+```bash
+sudo systemctl restart dumb-smart-display
+```
+
+---
+
+## Architecture & Development
+
+The project is structured to separate the core engine from content modules.
 
 ```
 /app
-  /core
-  /modules
-  /drivers
-/config
-/scripts
-/systemd
+  /core         # ModuleManager, Module Interface, Layout definitions
+  /modules      # Content providers (Clock, Mealie, etc.)
+  buttons.py    # GPIO interaction
+  display.py    # Display driver abstraction (Hardware vs Simulator)
+  main.py       # Entry point
+/config         # User configuration
+/scripts        # Helpers for install/test/dev
 ```
 
-### **app/core/**
+### Developing on your PC (Simulator)
 
-Core logic for:
+You don't need a Pi to write modules! The project includes a simulator that renders the display to your terminal (or a window, depending on configuration).
 
-* Module loading
-* Screen update scheduling
-* Button event handling
-* System state
-* Logging and error recovery
+**Run the Simulator:**
+```bash
+./scripts/dev_simulate.sh
+```
+This script handles creating the local `venv` and installing dependencies automatically.
 
-### **app/modules/**
+### Writing a New Module
 
-Each folder = one module
-Modules expose a consistent interface:
+Modules are Python classes that implement the **Module Protocol**.
+See [`docs/module_api.md`](docs/module_api.md) for full documentation on:
+*   `render(width, height)`: Draw your content.
+*   `tick()`: Background updates.
+*   `Layout Presets`: Defining how your module fits on the screen.
 
-```python
-class Module:
-    def render() -> Image
-    def on_button_press(button): optional
-    def tick(): optional background logic
+---
+
+## Troubleshooting
+
+**Logs**:
+View logs via systemd:
+```bash
+journalctl -u dumb-smart-display -f
 ```
 
-### **app/drivers/**
+**Test Display Hardware**:
+If the screen isn't working, run the low-level hardware test:
+```bash
+./scripts/display_test.sh
+```
 
-Hardware abstraction:
-
-* Display driver (Waveshare/etc.)
-* Button driver (GPIO)
-* Simulator driver for PC development (no hardware required)
-
-### **config/**
-
-Configuration files defining:
-
-* Which modules are enabled
-* Hardware settings
-* Rotation
-* API keys
-* Update preferences
-
-### **scripts/**
-
-Utility scripts:
-
-* Pi bootstrap
-* Install systemd service
-* Update-and-restart
-* Debug helpers
-
-### **systemd/**
-
-A service file allowing the display to run at boot like a real appliance.
-
----
-
-# **How Development Works**
-
-### **1. Developing on a PC**
-
-You can work on modules and UI without touching a Pi:
-
-1. Create a Python venv
-2. Install requirements
-3. Run the app in **simulator mode** so the display renders to a window or logs instead of GPIO
-4. Push to GitHub
-
-The Pi can then pull the newest commit and restart.
-
----
-
-### **2. Setting Up a New Pi (High-Level)**
-
-A new Raspberry Pi only needs a one-time bootstrap:
-
-1. Flash Raspberry Pi OS Lite
-2. Connect to Wi-Fi
-3. SSH in
-4. Run the provided bootstrap script
-5. The script:
-
-   * Installs system dependencies
-   * Sets up a Python venv
-   * Clones the repo
-   * Installs Python packages
-   * Installs systemd service
-   * Starts the display
-
-After that, the Pi acts like a sealed appliance.
-
----
-
-# **Goal for Contributors**
-
-Anyone new to the project should understand three things:
-
-1. **Modules are the heart of the system.**
-   If you can write a Python module that returns an image, you can extend the display.
-
-2. **The hardware is simple and abstracted.**
-   All GPIO and display code is behind clean interfaces.
-
-3. **Setup is automated.**
-   A bootstrap script handles everything so nobody has to manually configure a Pi.
+**Test API Connections**:
+Verify your TickTick or Mealie connection without running the full app:
+```bash
+./scripts/test_ticktick_connection.py
+```
