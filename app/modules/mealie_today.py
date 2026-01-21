@@ -24,7 +24,7 @@ class Module:
         self.fonts = fonts
         self.last_fetch: Optional[datetime.datetime] = None
         self.meal_details: Dict[str, Optional[Any]] = {
-            "name": "No dinner planned",
+            "name": "You Effed up, Doordash",
             "prep": None,
             "cook": None,
             "total": None,
@@ -171,14 +171,14 @@ class Module:
                 dinner = self._extract_dinner_details(entries)
                 if dinner:
                     self.meal_details = {
-                        "name": dinner.get("name") or "No dinner planned",
+                        "name": dinner.get("name") or "You Effed up, Doordash",
                         "prep": dinner.get("prep"),
                         "cook": dinner.get("cook"),
                         "total": dinner.get("total"),
                     }
                 else:
                     self.meal_details = {
-                        "name": "No dinner planned",
+                        "name": "You Effed up, Doordash",
                         "prep": None,
                         "cook": None,
                         "total": None,
@@ -289,7 +289,7 @@ class Module:
         header_bottom = int(height * 0.45)
 
         title_box = (padding, padding, width - padding, header_bottom)
-        meal_text = str(self.meal_details.get("name") or "No dinner planned")
+        meal_text = str(self.meal_details.get("name") or "You Effed up, Doordash")
         bottom_of_title = self._draw_title_card(draw, title_box, meal_text)
 
         time_box_top = bottom_of_title + 10
@@ -543,7 +543,7 @@ class Module:
                 footer_box = slots[key]
                 break
 
-        meal_text = str(self.meal_details.get("name") or "No dinner planned")
+        meal_text = str(self.meal_details.get("name") or "You Effed up, Doordash")
         bottom_of_title = self._draw_title_card(draw, title_box, meal_text)
 
         if details_box:
