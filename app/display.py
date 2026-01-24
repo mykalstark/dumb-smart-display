@@ -62,13 +62,22 @@ class HardwareDisplayDriver:
         self.driver = driver_module.EPD()
 
         self._fast_display = None
-        self._refresh_counter = 0
         self._full_refresh_rate = 10  # Perform a full refresh every 10 updates
+        self._refresh_counter = self._full_refresh_rate  # Force full refresh on first render
         
         try:
             print("[Display] Initializing driver...")
             # This will open the pins defined in epdconfig.py
             self.driver.init()
+            
+            # Explicitly clear the display on boot to prevent ghosting from previous sessions
+            print("[Display] Clearing display...")
+            if hasattr(self.driver, "Clear"):
+                try:
+                    self.driver.Clear(0xFF)
+                except TypeError:
+                    self.driver.Clear()
+            
             print("[Display] Driver init successful.")
         except Exception as e:
             print(f"[Display] CRITICAL: Driver init crashed: {e}")
