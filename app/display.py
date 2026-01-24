@@ -62,6 +62,8 @@ class HardwareDisplayDriver:
         self.driver = driver_module.EPD()
 
         self._fast_display = None
+        self._refresh_counter = 0
+        self._full_refresh_rate = 10  # Perform a full refresh every 10 updates
         
         try:
             print("[Display] Initializing driver...")
@@ -155,7 +157,15 @@ class HardwareDisplayDriver:
 
         buffer = self.driver.getbuffer(prepared)
 
-        if self._fast_display:
+        # Increment refresh counter
+        self._refresh_counter += 1
+
+        # Check if we should force a full refresh
+        if self._refresh_counter >= self._full_refresh_rate:
+            print(f"[Display] Triggering scheduled full refresh (count={self._refresh_counter}).")
+            self._refresh_counter = 0
+            # Skip fast display to force full refresh
+        elif self._fast_display:
             try:
                 self._fast_display(buffer)
                 return
