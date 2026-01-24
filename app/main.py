@@ -3,6 +3,7 @@
 
 import argparse
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
@@ -113,22 +114,62 @@ def main() -> None:
     init_buttons(display, simulate=display.simulate, on_event=on_button)
 
     cycle_delay = int(config.get("hardware", {}).get("cycle_seconds", 30))
+    
+    # Quiet Hours Config
+    quiet_cfg = config.get("hardware", {}).get("quiet_hours", {})
+    quiet_start_str = quiet_cfg.get("start")
+    quiet_end_str = quiet_cfg.get("end")
+
     max_cycles = args.cycles
     cycle_count = 0
 
+    print(f"[MAIN] Cycle delay: {cycle_delay}s. Quiet hours: {quiet_start_str}-{quiet_end_str}")
+
     try:
         while True:
-            render_active_module()
+            # Check Quiet Hours
+            is_quiet = False
+            if quiet_start_str and quiet_end_str:
+                now = datetime.now()
+                current_time = now.strftime("%H:%M")
+                
+                # Handle range crossing midnight (e.g. 22:00 to 06:00)
+                if quiet_start_str > quiet_end_str:
+                    if current_time >= quiet_start_str or current_time < quiet_end_str:
+                        is_quiet = True
+                else:
+                    if quiet_start_str <= current_time < quiet_end_str:
+                        is_quiet = True
 
+            if is_quiet:
+                # During quiet hours, we just sleep and don't render/update modules
+                # This prevents screen updates and API calls
+                # time.sleep(60)
+                # continue
+                # Actually, let's allow background ticks (for data fetching) but skip display
+                pass
+
+            if not is_quiet:
+                render_active_module()
+
+            # Always tick modules (so they can fetch data in background if needed)
+            # or maybe we should pause that too? 
+            # If we pause ticking, data will be stale when we wake up.
+            # Let's keep ticking but maybe less frequently? 
+            # For simplicity, keep ticking.
             manager.tick_modules()
-            cycle_count += 1
+            
+            if not is_quiet:
+                cycle_count += 1
+                if max_cycles and cycle_count >= max_cycles:
+                    print("[MAIN] Completed requested render cycles. Exiting.")
+                    break
+                manager.activate_next()
+                time.sleep(cycle_delay)
+            else:
+                # Sleep longer during quiet hours to save CPU
+                time.sleep(60)
 
-            if max_cycles and cycle_count >= max_cycles:
-                print("[MAIN] Completed requested render cycles. Exiting.")
-                break
-
-            manager.activate_next()
-            time.sleep(cycle_delay)
     except KeyboardInterrupt:
         print("[MAIN] Exiting...")
 

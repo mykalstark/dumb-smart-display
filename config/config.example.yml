@@ -12,6 +12,10 @@ hardware:
     mosi: 10  # MOSI -> GPIO10 (Pin 19)
     sclk: 11  # SCLK -> GPIO11 (Pin 23)
   cycle_seconds: 30
+  # Optional: Prevent display updates during sleep hours to extend screen life
+  quiet_hours:
+    start: "22:00"
+    end: "07:00"
 
 modules:
   enabled:

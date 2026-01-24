@@ -140,10 +140,17 @@ class HardwareDisplayDriver:
                     setattr(self.epdconfig, attr, val)
 
     def _prepare_image(self, image: Image.Image) -> Image.Image:
-        img = image.convert("1").resize((self.width, self.height))
+        # Resize first
+        img = image.resize((self.width, self.height))
+        # Rotate if needed
         if self.rotation:
             img = img.rotate(self.rotation, expand=False)
-        return img
+        
+        # Convert to 1-bit using Thresholding (sharper text) instead of Dithering
+        # 1. Convert to Grayscale ('L')
+        # 2. Apply threshold: pixels < 128 becomes 0 (black), others 255 (white)
+        # 3. Convert to Binary ('1')
+        return img.convert("L").point(lambda x: 0 if x < 128 else 255, "1")
 
     def render_text(self, text: str) -> None:
         image = Image.new("1", (self.width, self.height), 255)
@@ -155,33 +162,40 @@ class HardwareDisplayDriver:
             font = ImageFont.load_default()
 
         draw.multiline_text((10, 10), text, font=font, fill=0, spacing=4)
-        prepared = self._prepare_image(image)
-        self.driver.display(self.driver.getbuffer(prepared))
+        # Render via the main pipeline so it handles init/sleep
+        self.render_image(image)
 
     def render_image(self, image: object) -> None:
         if not isinstance(image, Image.Image):
             raise TypeError("HardwareDisplayDriver expects a PIL.Image for render_image")
 
-        prepared = self._prepare_image(image)
+        try:
+            # Wake up the display
+            self.driver.init()
 
-        buffer = self.driver.getbuffer(prepared)
+            prepared = self._prepare_image(image)
+            buffer = self.driver.getbuffer(prepared)
 
-        # Increment refresh counter
-        self._refresh_counter += 1
+            # Increment refresh counter
+            self._refresh_counter += 1
 
-        # Check if we should force a full refresh
-        if self._refresh_counter >= self._full_refresh_rate:
-            print(f"[Display] Triggering scheduled full refresh (count={self._refresh_counter}).")
-            self._refresh_counter = 0
-            # Skip fast display to force full refresh
-        elif self._fast_display:
-            try:
-                self._fast_display(buffer)
-                return
-            except Exception as exc:
-                print(f"[Display] Fast display failed ({exc}); falling back to full refresh.")
+            # Check if we should force a full refresh
+            if self._refresh_counter >= self._full_refresh_rate:
+                print(f"[Display] Triggering scheduled full refresh (count={self._refresh_counter}).")
+                self._refresh_counter = 0
+                self.driver.display(buffer)
+            elif self._fast_display:
+                try:
+                    self._fast_display(buffer)
+                except Exception as exc:
+                    print(f"[Display] Fast display failed ({exc}); falling back to full refresh.")
+                    self.driver.display(buffer)
+            else:
+                self.driver.display(buffer)
 
-        self.driver.display(buffer)
+        finally:
+            # Always put display to sleep to prevent burn-in/fading
+            self.driver.sleep()
 
 
 class Display:
