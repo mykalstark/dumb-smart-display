@@ -12,7 +12,7 @@ class DisplayDriver(Protocol):
 
     def render_text(self, text: str) -> None: ...
 
-    def render_image(self, image: object) -> None: ...
+    def render_image(self, image: object, force_full_refresh: bool = False) -> None: ...
 
 
 class SimulatorDisplayDriver:
@@ -30,8 +30,8 @@ class SimulatorDisplayDriver:
         print(text)
         print("===================================")
 
-    def render_image(self, image: object) -> None:
-        print("[Display] Simulator received image object: %s" % type(image))
+    def render_image(self, image: object, force_full_refresh: bool = False) -> None:
+        print("[Display] Simulator received image object: %s (force_full=%s)" % (type(image), force_full_refresh))
 
 
 class HardwareDisplayDriver:
@@ -165,7 +165,7 @@ class HardwareDisplayDriver:
         # Render via the main pipeline so it handles init/sleep
         self.render_image(image)
 
-    def render_image(self, image: object) -> None:
+    def render_image(self, image: object, force_full_refresh: bool = False) -> None:
         if not isinstance(image, Image.Image):
             raise TypeError("HardwareDisplayDriver expects a PIL.Image for render_image")
 
@@ -180,8 +180,9 @@ class HardwareDisplayDriver:
             self._refresh_counter += 1
 
             # Check if we should force a full refresh
-            if self._refresh_counter >= self._full_refresh_rate:
-                print(f"[Display] Triggering scheduled full refresh (count={self._refresh_counter}).")
+            if force_full_refresh or self._refresh_counter >= self._full_refresh_rate:
+                reason = "manual request" if force_full_refresh else f"count={self._refresh_counter}"
+                print(f"[Display] Triggering full refresh ({reason}).")
                 self._refresh_counter = 0
                 self.driver.display(buffer)
             elif self._fast_display:
@@ -225,13 +226,13 @@ class Display:
             pin_config=self.pin_config,
         )
 
-    def render(self, content: object) -> None:
+    def render(self, content: object, force_full_refresh: bool = False) -> None:
         if isinstance(content, str):
             self.render_text(content)
             return
 
         if hasattr(content, "size") and hasattr(content, "mode"):
-            self.render_image(self._add_border(content))
+            self.render_image(self._add_border(content), force_full_refresh=force_full_refresh)
             return
 
         self.render_text(str(content))
@@ -240,8 +241,8 @@ class Display:
         image = self._render_text_image(text)
         self.render_image(image)
 
-    def render_image(self, image: object) -> None:
-        self.driver.render_image(image)
+    def render_image(self, image: object, force_full_refresh: bool = False) -> None:
+        self.driver.render_image(image, force_full_refresh=force_full_refresh)
 
     def _render_text_image(self, text: str) -> Image.Image:
         width = getattr(self.driver, "width", 800)

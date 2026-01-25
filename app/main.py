@@ -2,6 +2,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -92,8 +93,15 @@ def main() -> None:
     manager = build_module_manager(config, fonts)
 
     display = build_display(config, force_simulate=args.simulate)
+    
+    # Event to wake the main loop for immediate updates
+    wake_event = threading.Event()
+    
+    # State to track if the next render should be a full refresh
+    next_render_force_full = False
 
     def render_active_module() -> None:
+        nonlocal next_render_force_full
         module = manager.current_module()
         if module is None:
             display.render_text("No modules enabled.")
@@ -103,13 +111,26 @@ def main() -> None:
             w = display.driver.width
             h = display.driver.height
             content = module.render(width=w, height=h)
-            display.render(content)
+            
+            # Render with the force flag if set
+            display.render(content, force_full_refresh=next_render_force_full)
+            
+            # Reset flag after rendering
+            if next_render_force_full:
+                next_render_force_full = False
+                
         except Exception as exc:
             print(f"[MAIN] Error rendering module {module}: {exc}", flush=True)
 
     def on_button(event: str) -> None:
+        nonlocal next_render_force_full
+        # Handle state change immediately, then wake the loop to render
         manager.route_button_event(event)
-        render_active_module()
+        
+        if event == "refresh":
+            next_render_force_full = True
+            
+        wake_event.set()
 
     init_buttons(display, simulate=display.simulate, on_event=on_button)
 
@@ -127,7 +148,7 @@ def main() -> None:
 
     try:
         while True:
-            # Check Quiet Hours
+            # 1. Check Quiet Hours
             is_quiet = False
             if quiet_start_str and quiet_end_str:
                 now = datetime.now()
@@ -142,33 +163,35 @@ def main() -> None:
                         is_quiet = True
 
             if is_quiet:
-                # During quiet hours, we just sleep and don't render/update modules
-                # This prevents screen updates and API calls
-                # time.sleep(60)
-                # continue
-                # Actually, let's allow background ticks (for data fetching) but skip display
-                pass
+                # Sleep and retry. We use sleep instead of wait here to save resources,
+                # effectively ignoring buttons during quiet hours (unless we wanted to wake).
+                time.sleep(60)
+                continue
 
-            if not is_quiet:
-                render_active_module()
+            # 2. Render
+            render_active_module()
 
-            # Always tick modules (so they can fetch data in background if needed)
-            # or maybe we should pause that too? 
-            # If we pause ticking, data will be stale when we wake up.
-            # Let's keep ticking but maybe less frequently? 
-            # For simplicity, keep ticking.
+            # 3. Background Ticks
             manager.tick_modules()
             
-            if not is_quiet:
-                cycle_count += 1
-                if max_cycles and cycle_count >= max_cycles:
-                    print("[MAIN] Completed requested render cycles. Exiting.")
-                    break
-                manager.activate_next()
-                time.sleep(cycle_delay)
+            # 4. Check Exit Condition
+            cycle_count += 1
+            if max_cycles and cycle_count >= max_cycles:
+                print("[MAIN] Completed requested render cycles. Exiting.")
+                break
+
+            # 5. Wait for Delay OR Event
+            # wait returns True if the flag was set (button pressed), False on timeout
+            signaled = wake_event.wait(timeout=cycle_delay)
+            
+            if signaled:
+                # Button was pressed. State has already changed in on_button.
+                # Clear the event so we can wait again next time.
+                wake_event.clear()
+                # We skip activate_next() because the user likely navigated manually.
             else:
-                # Sleep longer during quiet hours to save CPU
-                time.sleep(60)
+                # Timeout occurred: Auto-advance to next module
+                manager.activate_next()
 
     except KeyboardInterrupt:
         print("[MAIN] Exiting...")
