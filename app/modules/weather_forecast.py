@@ -368,10 +368,7 @@ class Module(BaseDisplayModule):
 
         image = Image.new("1", (width, height), 255)
         draw = ImageDraw.Draw(image)
-
-        header_font = self.fonts.get("large", self.fonts.get("default"))
         default_font = self.fonts.get("default")
-        small_font = self.fonts.get("small", default_font)
 
         if self._error or not self._days:
             msg = self._error or "No forecast data"
@@ -379,74 +376,102 @@ class Module(BaseDisplayModule):
             draw.text(((width - tw) // 2, (height - th) // 2), msg, font=default_font, fill=0)
             return image
 
-        # --- Header bar ---
-        header_text = self.location_name
-        _, hh = self._get_text_size(draw, header_text, header_font)
-        header_pad = 10
-        header_total = hh + header_pad * 2
-        hw, _ = self._get_text_size(draw, header_text, header_font)
-        draw.text(((width - hw) // 2, header_pad), header_text, font=header_font, fill=0)
-        draw.line([(0, header_total), (width, header_total)], fill=0, width=2)
+        # Fixed, legible font sizes — previously scaled proportionally to row height
+        # which produced ~58px high / ~47px low on a 480px display.
+        header_font = self._load_font(18)
+        day_font    = self._load_font(15)
+        date_font   = self._load_font(11)
+        high_font   = self._load_font(20)
+        low_font    = self._load_font(15)
+        precip_font = self._load_font(11)
 
-        # --- 7 day columns ---
+        # --- Header ---
+        HEADER_H = 34
+        hdr_text = self.location_name
+        hw, hh = self._get_text_size(draw, hdr_text, header_font)
+        draw.text(((width - hw) // 2, (HEADER_H - hh) // 2), hdr_text, font=header_font, fill=0)
+        draw.line([(0, HEADER_H), (width, HEADER_H)], fill=0, width=1)
+
         n_days = len(self._days)
         col_w = width // n_days
-        body_top = header_total + 4
+        body_top = HEADER_H + 1
         body_h = height - body_top
 
-        # Row heights (proportional within body_h)
-        day_label_h = max(int(body_h * 0.10), 24)
-        icon_h = max(int(body_h * 0.40), 80)
-        high_h = max(int(body_h * 0.18), 32)
-        low_h = max(int(body_h * 0.14), 26)
-        precip_h = body_h - day_label_h - icon_h - high_h - low_h
+        # Row heights — proportional with min/max caps so they scale sensibly on
+        # any display size while keeping text from dominating the layout.
+        day_h     = min(max(int(body_h * 0.07), 20), 32)
+        date_h    = min(max(int(body_h * 0.05), 14), 22)
+        icon_zone = min(max(int(body_h * 0.43), 70), 200)
+        sep_h     = 8   # space consumed by separator line
+        high_h    = min(max(int(body_h * 0.08), 22), 32)
+        low_h     = min(max(int(body_h * 0.07), 18), 26)
+        precip_h  = min(max(int(body_h * 0.06), 14), 22)
+        top_pad   = 8
 
-        # Fonts scaled to fit rows
-        high_font = self._load_font(max(high_h - 8, 18))
-        low_font = self._load_font(max(low_h - 6, 14))
-        day_font = small_font
-        precip_font = small_font
+        content_h = top_pad + day_h + date_h + icon_zone + sep_h + high_h + low_h + precip_h
+
+        # Vertically centre the content block within each column body
+        v_offset = max((body_h - content_h) // 2, 0)
+
+        # Icon fits within the zone height and the column width
+        icon_size = min(icon_zone - 10, col_w - 20)
 
         for i, day in enumerate(self._days):
             x0 = i * col_w
             x1 = x0 + col_w
             cx = (x0 + x1) // 2
 
-            # Vertical divider (skip first)
+            # Vertical divider between columns (not before the first)
             if i > 0:
-                draw.line([(x0, body_top + 8), (x0, height - 8)], fill=0, width=1)
+                draw.line([(x0, body_top + 6), (x0, height - 6)], fill=0, width=1)
 
-            y = body_top
+            y = body_top + v_offset + top_pad
 
-            # Day label
-            day_text = day["day"]
-            dw, dh = self._get_text_size(draw, day_text, day_font)
-            draw.text((cx - dw // 2, y + (day_label_h - dh) // 2), day_text, font=day_font, fill=0)
-            y += day_label_h
+            # Day label ("MON", "TUE", …)
+            dtxt = day["day"].upper()
+            dw, dh = self._get_text_size(draw, dtxt, day_font)
+            draw.text((cx - dw // 2, y + (day_h - dh) // 2), dtxt, font=day_font, fill=0)
+            y += day_h
 
-            # Weather icon centred in icon zone
-            icon_cx = cx
-            icon_cy = y + icon_h // 2
-            icon_size = min(icon_h - 8, col_w - 16)
-            _draw_icon(draw, day["icon"], icon_cx, icon_cy, icon_size)
-            y += icon_h
+            # Date number ("1", "15", …) — small, below the day label
+            num = day["dt"].strftime("%d").lstrip("0") or "1"
+            nw, nh = self._get_text_size(draw, num, date_font)
+            draw.text((cx - nw // 2, y + (date_h - nh) // 2), num, font=date_font, fill=0)
+            y += date_h
 
-            # High temp
-            high_text = self._fmt_temp(day["high"])
-            hw2, hh2 = self._get_text_size(draw, high_text, high_font)
-            draw.text((cx - hw2 // 2, y + (high_h - hh2) // 2), high_text, font=high_font, fill=0)
+            # Weather icon centred within icon_zone
+            _draw_icon(draw, day["icon"], cx, y + icon_zone // 2, icon_size)
+            y += icon_zone
+
+            # Thin separator between icon and temperature rows
+            draw.line([(x0 + 8, y + 2), (x1 - 8, y + 2)], fill=0, width=1)
+            y += sep_h
+
+            # High temperature — larger font for primary reading
+            htxt = self._fmt_temp(day["high"])
+            hw2, hh2 = self._get_text_size(draw, htxt, high_font)
+            draw.text((cx - hw2 // 2, y + (high_h - hh2) // 2), htxt, font=high_font, fill=0)
             y += high_h
 
-            # Low temp
-            low_text = self._fmt_temp(day["low"])
-            lw, lh = self._get_text_size(draw, low_text, low_font)
-            draw.text((cx - lw // 2, y + (low_h - lh) // 2), low_text, font=low_font, fill=0)
+            # Low temperature — smaller font, visually subordinate
+            ltxt = self._fmt_temp(day["low"])
+            lw, lh = self._get_text_size(draw, ltxt, low_font)
+            draw.text((cx - lw // 2, y + (low_h - lh) // 2), ltxt, font=low_font, fill=0)
             y += low_h
 
-            # Precipitation (only if > 0)
-            precip_str = self._fmt_precip(day["precip"])
-            if precip_str and precip_h > 10:
-                pw, ph = self._get_text_size(draw, precip_str, precip_font)
-                draw.text((cx - pw // 2, y + (precip_h - ph) // 2), precip_str, font=precip_font, fill=0)
+            # Precipitation amount (only when non-zero)
+            pstr = self._fmt_precip(day["precip"])
+            if pstr:
+                pw, ph = self._get_text_size(draw, pstr, precip_font)
+                draw.text(
+                    (cx - pw // 2, y + max((precip_h - ph) // 2, 2)),
+                    pstr, font=precip_font, fill=0,
+                )
+
+        # Highlight today (always index 0 in Open-Meteo response) by inverting
+        # the column body — white-on-black stands out cleanly on e-ink.
+        today_crop = image.crop((0, body_top, col_w, height))
+        today_inv = today_crop.convert("L").point(lambda x: 255 - x).convert("1")
+        image.paste(today_inv, (0, body_top))
 
         return image
