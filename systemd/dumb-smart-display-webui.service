@@ -1,0 +1,14 @@
+[Unit]
+Description=Dumb Smart Display — Web Configuration UI
+After=network.target
+
+[Service]
+Type=simple
+User={{APP_USER}}
+WorkingDirectory={{APP_DIR}}
+ExecStart={{APP_DIR}}/.venv/bin/python -m app.webui.server
+Restart=on-failure
+Environment=FLASK_ENV=production
+
+[Install]
+WantedBy=multi-user.target

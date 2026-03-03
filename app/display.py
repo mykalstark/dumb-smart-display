@@ -256,7 +256,9 @@ class Display:
         except Exception:
             font = ImageFont.load_default()
 
-        text_w, text_h = draw.textsize(text, font=font)
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
         x = (width - text_w) // 2
         y = (height - text_h) // 2
 

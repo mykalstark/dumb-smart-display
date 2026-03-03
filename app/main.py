@@ -20,16 +20,50 @@ DEFAULT_CONFIG_PATH = Path("config/config.yml")
 DEFAULT_CONFIG_FALLBACK = Path("config/config.example.yml")
 
 
+def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursively merge *override* into *base*, returning a new dict.
+
+    Rules:
+    - If both values are dicts, recurse so nested keys are merged individually.
+    - For all other types (including lists), the override value wins outright.
+
+    This means ``modules.enabled`` (a list) is fully replaced by the user's
+    version, while ``modules.settings`` (a dict) is merged key-by-key so that
+    new module sections added to the example automatically appear with their
+    default values without touching the user's existing settings.
+    """
+    result = dict(base)
+    for key, val in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(val, dict):
+            result[key] = _deep_merge(result[key], val)
+        else:
+            result[key] = val
+    return result
+
+
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Dict[str, Any]:
-    if path.exists():
-        with path.open("r", encoding="utf-8") as handle:
-            return yaml.safe_load(handle) or {}
+    # Always load the example file first as a baseline of defaults.
+    base: Dict[str, Any] = {}
     if DEFAULT_CONFIG_FALLBACK.exists():
         with DEFAULT_CONFIG_FALLBACK.open("r", encoding="utf-8") as handle:
-            print(f"[MAIN] Using fallback config: {DEFAULT_CONFIG_FALLBACK}")
-            return yaml.safe_load(handle) or {}
-    print("[MAIN] No configuration found. Using defaults.")
-    return {}
+            base = yaml.safe_load(handle) or {}
+
+    if not path.exists():
+        if base:
+            print(
+                f"[MAIN] config/config.yml not found — using {DEFAULT_CONFIG_FALLBACK} as defaults. "
+                "Copy it to config/config.yml and fill in your settings."
+            )
+        else:
+            print("[MAIN] No configuration found. Using defaults.")
+        return base
+
+    with path.open("r", encoding="utf-8") as handle:
+        user_cfg = yaml.safe_load(handle) or {}
+
+    # Deep-merge: user values win; new keys from the example fill in automatically.
+    merged = _deep_merge(base, user_cfg)
+    return merged
 
 # <--- NEW HELPER: Load Fonts
 def load_fonts() -> Dict[str, Any]:
@@ -74,6 +108,19 @@ def build_module_manager(config: Dict[str, Any], fonts: Dict[str, Any]) -> Modul
     modules_cfg = config.get("modules", {})
     enabled_modules = modules_cfg.get("enabled")
     module_config = modules_cfg.get("settings", {})
+
+    # Inject top-level shared config (e.g. location) into every module's settings.
+    # Module-specific keys always win — shared values only fill in the gaps.
+    shared: Dict[str, Any] = {}
+    location = config.get("location", {})
+    if isinstance(location, dict):
+        shared.update(location)
+
+    if shared:
+        all_names = list(enabled_modules or []) + list(module_config.keys())
+        for name in dict.fromkeys(all_names):  # deduplicated, insertion order preserved
+            module_config[name] = {**shared, **module_config.get(name, {})}
+
     # Pass fonts to manager
     manager = ModuleManager(fonts=fonts, enabled_modules=enabled_modules, module_config=module_config)
     manager.load_modules()

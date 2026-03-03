@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 import pkgutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -68,9 +69,10 @@ class ModuleManager:
 
         cfg = self.module_config.get(module_name, {})
 
-        try:
+        sig = inspect.signature(module_cls.__init__)
+        if "fonts" in sig.parameters:
             instance: DisplayModule = module_cls(config=cfg, fonts=self.fonts)
-        except TypeError:
+        else:
             instance = module_cls(config=cfg)  # type: ignore[call-arg]
 
         print(f"[MODULES] Loaded module '{module_name}'.", flush=True)
@@ -150,4 +152,7 @@ class ModuleManager:
 
     def tick_modules(self) -> None:
         for module in self.modules:
-            module.tick()
+            try:
+                module.tick()
+            except Exception as exc:
+                print(f"[MODULES] tick() failed for {getattr(module, 'name', module)}: {exc}", flush=True)

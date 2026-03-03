@@ -1,0 +1,367 @@
+{% extends "base.html" %}
+
+{% block title %}Configuration — Dumb Smart Display{% endblock %}
+
+{% block content %}
+
+{# ------------------------------------------------------------------ #}
+{# Macro: render a single form field                                   #}
+{# ------------------------------------------------------------------ #}
+{% macro render_field(field, name_prefix, value) %}
+  {% set fid = name_prefix ~ '__' ~ field.key | replace('.', '__') %}
+  {% set fname = name_prefix ~ '__' ~ field.key %}
+
+  {% if field.type == 'toggle' %}
+  <div class="field full-width">
+    <div class="toggle-row">
+      <label class="switch">
+        <input type="checkbox" id="{{ fid }}" name="{{ fname }}"
+               {% if value %}checked{% endif %}>
+        <span class="slider"></span>
+      </label>
+      <label for="{{ fid }}" style="margin:0; cursor:pointer;">
+        {{ field.label }}
+      </label>
+    </div>
+    {% if field.help is defined %}
+    <span class="help-text">{{ field.help }}</span>
+    {% endif %}
+  </div>
+
+  {% elif field.type == 'select' %}
+  <div class="field">
+    <label for="{{ fid }}">
+      {{ field.label }}
+      {% if field.required is defined and field.required %}<span class="req">*</span>{% endif %}
+    </label>
+    <select id="{{ fid }}" name="{{ fname }}">
+      {% for opt in field.options %}
+      <option value="{{ opt.value }}"
+        {% if value | string == opt.value | string %}selected{% endif %}>
+        {{ opt.label }}
+      </option>
+      {% endfor %}
+    </select>
+    {% if field.help is defined %}
+    <span class="help-text">{{ field.help }}</span>
+    {% endif %}
+  </div>
+
+  {% elif field.type == 'password' %}
+  <div class="field">
+    <label for="{{ fid }}">
+      {{ field.label }}
+      {% if field.required is defined and field.required %}<span class="req">*</span>{% endif %}
+    </label>
+    <div class="pw-wrapper">
+      <input type="password" id="{{ fid }}" name="{{ fname }}"
+             value="{{ value if value is not none else '' }}"
+             placeholder="{{ field.placeholder if field.placeholder is defined else '' }}"
+             {% if field.required is defined and field.required %}required{% endif %} />
+      <button type="button" class="pw-toggle" onclick="togglePw('{{ fid }}', this)">Show</button>
+    </div>
+    {% if field.help is defined %}
+    <span class="help-text">{{ field.help }}</span>
+    {% endif %}
+  </div>
+
+  {% elif field.type == 'events_list' %}
+  <div class="field full-width">
+    <label>{{ field.label }}</label>
+    {% if field.help is defined %}
+    <span class="help-text" style="margin-bottom:8px;">{{ field.help }}</span>
+    {% endif %}
+    <div class="events-list" id="{{ fid }}-list">
+      {% if value and value | length > 0 %}
+        {% for ev in value %}
+        <div class="event-row">
+          <input type="text"
+                 name="{{ fname }}__{{ loop.index0 }}__name"
+                 value="{{ ev.name if ev.name is defined else '' }}"
+                 placeholder="Event name" />
+          <input type="date"
+                 name="{{ fname }}__{{ loop.index0 }}__date"
+                 value="{{ ev.date if ev.date is defined else '' }}" />
+          <button type="button" class="btn-remove-event"
+                  onclick="removeEvent(this)">Remove</button>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="event-row">
+          <input type="text"  name="{{ fname }}__0__name" placeholder="Event name" />
+          <input type="date"  name="{{ fname }}__0__date" />
+          <button type="button" class="btn-remove-event"
+                  onclick="removeEvent(this)">Remove</button>
+        </div>
+      {% endif %}
+    </div>
+    <button type="button" class="btn-add-event" style="margin-top:8px;"
+            onclick="addEvent('{{ fid }}-list', '{{ fname }}')">+ Add event</button>
+  </div>
+
+  {% elif field.type == 'number' %}
+  <div class="field">
+    <label for="{{ fid }}">
+      {{ field.label }}
+      {% if field.required is defined and field.required %}<span class="req">*</span>{% endif %}
+    </label>
+    <input type="number" id="{{ fid }}" name="{{ fname }}"
+           value="{{ value if value is not none else '' }}"
+           placeholder="{{ field.placeholder if field.placeholder is defined else '' }}"
+           {% if field.min is defined %}min="{{ field.min }}"{% endif %}
+           {% if field.max is defined %}max="{{ field.max }}"{% endif %}
+           {% if field.required is defined and field.required %}required{% endif %} />
+    {% if field.help is defined %}
+    <span class="help-text">{{ field.help }}</span>
+    {% endif %}
+  </div>
+
+  {% else %}{# text / url / default #}
+  <div class="field {% if field.key == 'ics_url' or field.key == 'feed_url' or field.key == 'base_url' %}full-width{% endif %}">
+    <label for="{{ fid }}">
+      {{ field.label }}
+      {% if field.required is defined and field.required %}<span class="req">*</span>{% endif %}
+    </label>
+    <input type="text" id="{{ fid }}" name="{{ fname }}"
+           value="{{ value if value is not none else '' }}"
+           placeholder="{{ field.placeholder if field.placeholder is defined else '' }}"
+           {% if field.required is defined and field.required %}required{% endif %} />
+    {% if field.help is defined %}
+    <span class="help-text">{{ field.help }}</span>
+    {% endif %}
+  </div>
+  {% endif %}
+{% endmacro %}
+
+{# ------------------------------------------------------------------ #}
+{# 0. Software update                                                   #}
+{# ------------------------------------------------------------------ #}
+<div class="card">
+  <div class="card-header">
+    <h2>Software</h2>
+    <span class="version-badge" title="Current commit">{{ current_version }}</span>
+  </div>
+  <div class="card-body">
+    <div class="update-row">
+      <div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:4px;">
+          Pull the latest code from GitHub. If updates are available they will be
+          applied and both the display and this web UI will restart automatically.
+        </p>
+      </div>
+      <div class="update-actions">
+        <a href="{{ url_for('update_check') }}" class="btn-secondary">Check for Updates</a>
+        <form method="POST" action="{{ url_for('do_update') }}" style="margin:0;"
+              onsubmit="return confirm('Pull the latest code from GitHub and restart both services?')">
+          <button type="submit" class="btn-primary">Update &amp; Restart</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# 1. Location                                                          #}
+{# ------------------------------------------------------------------ #}
+<div class="card">
+  <div class="card-header">
+    <h2>{{ location_schema.label }}</h2>
+    <span style="font-size:12px; color:var(--muted);">Shared by clock and weather modules</span>
+  </div>
+  <div class="card-body">
+    <div class="form-grid">
+      {% set loc = cfg.get('location', {}) %}
+      {% for field in location_schema.fields %}
+        {{ render_field(field, 'location', get_nested(loc, field.key, '')) }}
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# 2. Active modules                                                    #}
+{# ------------------------------------------------------------------ #}
+<div class="card">
+  <div class="card-header">
+    <h2>Active Modules</h2>
+    <span style="font-size:12px; color:var(--muted);">Choose what appears on the display</span>
+  </div>
+  <div class="card-body">
+    <div class="module-grid">
+      {% for mod_name in module_order %}
+      {% set schema = module_schemas[mod_name] %}
+      <label class="module-toggle" for="mod_en_{{ mod_name }}">
+        <input type="checkbox"
+               id="mod_en_{{ mod_name }}"
+               name="modules__enabled__{{ mod_name }}"
+               value="1"
+               {% if mod_name in enabled_set %}checked{% endif %}
+               onchange="syncModuleSection('{{ mod_name }}', this.checked)" />
+        <span class="module-toggle-label">
+          <strong>{{ schema.label }}</strong>
+          <span>{{ schema.description }}</span>
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# 3. Module settings (collapsible per module)                          #}
+{# ------------------------------------------------------------------ #}
+<div class="card">
+  <div class="card-header">
+    <h2>Module Settings</h2>
+    <span style="font-size:12px; color:var(--muted);">Expand a module to configure it</span>
+  </div>
+  <div class="card-body" style="padding-bottom:8px;">
+    {% for mod_name in module_order %}
+    {% set schema = module_schemas[mod_name] %}
+    {% set is_enabled = mod_name in enabled_set %}
+    {% set mod_cfg = mod_settings.get(mod_name, {}) %}
+
+    <div class="module-section" id="section-{{ mod_name }}"
+         {% if not is_enabled %}style="opacity:.5;"{% endif %}>
+      <button type="button"
+              class="module-section-header {% if is_enabled %}open{% endif %}"
+              id="hdr-{{ mod_name }}"
+              onclick="toggleSection('{{ mod_name }}')">
+        {{ schema.label }}
+        <span class="chevron">▼</span>
+      </button>
+      <div class="module-section-body {% if is_enabled %}visible{% endif %}"
+           id="body-{{ mod_name }}">
+        <div class="form-grid">
+          {% for field in schema.fields %}
+            {%- set raw_val = get_nested(mod_cfg, field.key, none) -%}
+            {{ render_field(field, 'modules__settings__' ~ mod_name, raw_val) }}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# 4. Display settings                                                  #}
+{# ------------------------------------------------------------------ #}
+<div class="card">
+  <div class="card-header">
+    <h2>{{ hardware_schema.label }}</h2>
+  </div>
+  <div class="card-body">
+    <div class="form-grid">
+      {% set hw = cfg.get('hardware', {}) %}
+      {% for field in hardware_schema.fields %}
+        {{ render_field(field, 'hardware', get_nested(hw, field.key, '')) }}
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# 5. Web UI settings                                                   #}
+{# ------------------------------------------------------------------ #}
+<div class="card">
+  <div class="card-header">
+    <h2>{{ webui_schema.label }}</h2>
+  </div>
+  <div class="card-body">
+    <div class="form-grid">
+      {% set webui = cfg.get('webui', {}) %}
+      {% for field in webui_schema.fields %}
+        {{ render_field(field, 'webui', get_nested(webui, field.key, '')) }}
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# Sticky save bar                                                      #}
+{# ------------------------------------------------------------------ #}
+<div class="save-bar">
+  <span class="save-note">Saving will restart the display service.</span>
+  <button type="submit" form="config-form" class="btn-primary">Save &amp; Restart</button>
+</div>
+
+{# Wrap the whole page content in a form so the sticky button works.    #}
+{# We do this by surrounding everything with a hidden form tag that the  #}
+{# submit button references via its form="" attribute.                   #}
+<form id="config-form" method="POST" action="{{ url_for('config_save') }}" style="display:none;"></form>
+
+{# Reassign all inputs to this form so they are submitted together.      #}
+<script>
+(function () {
+  var form = document.getElementById('config-form');
+  document.querySelectorAll('input, select, textarea, button[type="submit"]').forEach(function(el) {
+    if (!el.form || el.form.id !== 'config-form') {
+      el.setAttribute('form', 'config-form');
+    }
+  });
+})();
+</script>
+
+{# ------------------------------------------------------------------ #}
+{# JS: section collapse / module sync / events / password toggle        #}
+{# ------------------------------------------------------------------ #}
+<script>
+/* ---------- collapsible sections ---------- */
+function toggleSection(name) {
+  var hdr  = document.getElementById('hdr-'  + name);
+  var body = document.getElementById('body-' + name);
+  var open = body.classList.toggle('visible');
+  hdr.classList.toggle('open', open);
+}
+
+/* ---------- sync section dim when checkbox toggled ---------- */
+function syncModuleSection(name, enabled) {
+  var sec = document.getElementById('section-' + name);
+  if (!sec) return;
+  sec.style.opacity = enabled ? '1' : '0.5';
+  /* auto-open the settings when enabling */
+  if (enabled) {
+    var body = document.getElementById('body-' + name);
+    var hdr  = document.getElementById('hdr-'  + name);
+    if (body && !body.classList.contains('visible')) {
+      body.classList.add('visible');
+      hdr.classList.add('open');
+    }
+  }
+}
+
+/* ---------- events list ---------- */
+function addEvent(listId, fieldPrefix) {
+  var list = document.getElementById(listId);
+  var rows = list.querySelectorAll('.event-row');
+  var idx  = rows.length;
+  var row  = document.createElement('div');
+  row.className = 'event-row';
+  row.innerHTML =
+    '<input type="text"  name="' + fieldPrefix + '__' + idx + '__name" placeholder="Event name" form="config-form" />' +
+    '<input type="date"  name="' + fieldPrefix + '__' + idx + '__date" form="config-form" />' +
+    '<button type="button" class="btn-remove-event" onclick="removeEvent(this)">Remove</button>';
+  list.appendChild(row);
+}
+
+function removeEvent(btn) {
+  var row  = btn.closest('.event-row');
+  var list = row.parentElement;
+  row.remove();
+  /* re-index remaining rows so names stay sequential */
+  list.querySelectorAll('.event-row').forEach(function(r, i) {
+    r.querySelectorAll('input').forEach(function(inp) {
+      inp.name = inp.name.replace(/__\d+__/, '__' + i + '__');
+    });
+  });
+}
+
+/* ---------- password show/hide ---------- */
+function togglePw(id, btn) {
+  var inp = document.getElementById(id);
+  if (inp.type === 'password') { inp.type = 'text'; btn.textContent = 'Hide'; }
+  else { inp.type = 'password'; btn.textContent = 'Show'; }
+}
+</script>
+{% endblock %}

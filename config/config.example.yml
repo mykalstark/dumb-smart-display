@@ -17,22 +17,34 @@ hardware:
     start: "22:00"
     end: "07:00"
 
+# Shared location used by clock and weather_forecast modules.
+# Any module can override these with its own latitude/longitude keys.
+location:
+  latitude: 40.513217
+  longitude: -112.321445
+  temperature_unit: "fahrenheit"  # or "celsius"
+  location_name: "Home"
+
 modules:
   enabled:
     - clock
     - mealie_today
     - ticktick
+    # - calendar_ics
+    # - rss_feed
+    # - countdown
+    # - spotify_now_playing
+    # - system_status
+    # - weather_forecast
   settings:
     clock:
       time_format: "%I:%M %p"  # 12-hour format (e.g. 02:30 PM)
       date_format: "%a %d"     # Short date (e.g. Fri 26)
       time_size: 120           # Even bigger time
       date_size: 50            # Bigger date
-      latitude: 40.513217      # Required for weather lookups
-      longitude: -112.321445   # Required for weather lookups
-      temperature_unit: "fahrenheit" # or "celsius"
+      # latitude, longitude, temperature_unit, location_name inherited from top-level location:
+      # Override here if this module needs a different location than the global one.
       refresh_seconds: 1800    # Weather refresh cadence
-      location_name: "Home"    # Header label for the card
     mealie_today:
       enabled: true
       base_url: "http://192.168.xx.yy:9000"     # or whatever you're using as MEALIE_BASE_URL
@@ -61,11 +73,72 @@ modules:
         # access_token_expires_at: "2024-12-31T23:59:59Z"
         timezone: "America/Denver"
 
+    calendar_ics:
+      # Paste your private iCal URL from Google Calendar, Apple Calendar, Outlook, etc.
+      # In Google Calendar: Settings → [calendar] → "Secret address in iCal format"
+      # In Apple Calendar: Right-click calendar → "Share Calendar" → copy private link
+      # Both webcal:// and https:// URLs are accepted.
+      ics_url: "CHANGE_ME"
+      time_format: "%I:%M %p"   # or "%H:%M" for 24-hour
+      max_events_per_day: 5
+      refresh_seconds: 900      # Re-fetch every 15 minutes
+
+    rss_feed:
+      # Any RSS or Atom feed URL. Defaults to Good News Network (uplifting news).
+      feed_url: "https://www.goodnewsnetwork.org/feed/"
+      max_items: 8              # Max headlines to load
+      refresh_seconds: 1800     # Re-fetch every 30 minutes
+      # Button "next"/"back" pages through headlines; "refresh" forces a re-fetch.
+
+    countdown:
+      # List one or more upcoming events to count down to.
+      # Use YYYY-MM-DD date format.
+      events:
+        - name: "My Event"
+          date: "2026-12-25"
+        # - name: "Another Event"
+        #   date: "2026-07-04"
+      show_past_days: 7         # Keep showing for N days after the event date (0 = hide immediately)
+      # Button "next"/"back" cycles between multiple events.
+
+    spotify_now_playing:
+      # Setup instructions (one-time):
+      # 1. Go to https://developer.spotify.com/dashboard and create an app.
+      # 2. Add "http://localhost:8888/callback" as a Redirect URI in the app settings.
+      # 3. Note your Client ID and Client Secret from the app dashboard.
+      # 4. Open this URL in your browser (replace CLIENT_ID):
+      #    https://accounts.spotify.com/authorize?client_id=CLIENT_ID&response_type=code&redirect_uri=http://localhost:8888/callback&scope=user-read-currently-playing
+      # 5. After authorizing, you'll be redirected to localhost (which won't load — that's fine).
+      #    Copy the "code" value from the URL: http://localhost:8888/callback?code=CODE_HERE
+      # 6. Run this curl command (replace CLIENT_ID, CLIENT_SECRET, and CODE):
+      #    curl -X POST https://accounts.spotify.com/api/token \
+      #      -H "Content-Type: application/x-www-form-urlencoded" \
+      #      -u "CLIENT_ID:CLIENT_SECRET" \
+      #      -d "grant_type=authorization_code&code=CODE_HERE&redirect_uri=http://localhost:8888/callback"
+      # 7. Copy the "refresh_token" from the response — it does not expire.
+      client_id: "CHANGE_ME"
+      client_secret: "CHANGE_ME"
+      refresh_token: "CHANGE_ME"
+      refresh_seconds: 10       # How often to poll currently-playing (Spotify allows ~1 req/sec)
+
+    system_status:
+      refresh_seconds: 60       # How often to refresh stats
+      show_ip: true             # Show local IP address
+      cpu_temp_warn_celsius: 70 # Temperature above which a warning indicator is shown
+
+    weather_forecast:
+      # latitude, longitude, temperature_unit, location_name inherited from top-level location:
+      # Override here if this module needs a different location than the global one.
+      refresh_seconds: 3600     # Re-fetch forecast once per hour
+
 api_tokens:
-  weather: "CHANGE_ME"
-  calendar: "CHANGE_ME"
   meal_planner: "CHANGE_ME"
 
 appearance:
   brightness: 1.0
   theme: "light"
+
+# Web-based configuration UI (served at http://<pi-ip>:8080)
+webui:
+  port: 8080
+  password: ""  # Leave empty to allow open access. Set any string to enable password protection.

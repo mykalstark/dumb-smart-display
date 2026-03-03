@@ -149,7 +149,65 @@ if command -v systemctl >/dev/null 2>&1; then
   sudo systemctl start "${SERVICE_NAME}"
 fi
 
+# -----------------------------------------------------------------------------
+# 5. Web UI Service Setup
+# -----------------------------------------------------------------------------
+WEBUI_SERVICE_NAME="dumb-smart-display-webui.service"
+WEBUI_SERVICE_PATH="/etc/systemd/system/${WEBUI_SERVICE_NAME}"
+WEBUI_SERVICE_TEMPLATE_PATH="${APP_DIR}/systemd/dumb-smart-display-webui.service"
+
+if [ -f "${WEBUI_SERVICE_TEMPLATE_PATH}" ]; then
+  echo "[INSTALL] Building web UI systemd service file from template..."
+  tmp_webui_service="$(mktemp)"
+  sed -e "s#{{APP_USER}}#${APP_USER}#g" \
+      -e "s#{{APP_DIR}}#${APP_DIR}#g" "${WEBUI_SERVICE_TEMPLATE_PATH}" > "${tmp_webui_service}"
+
+  echo "[INSTALL] Copying web UI service file to ${WEBUI_SERVICE_PATH}..."
+  sudo mv "${tmp_webui_service}" "${WEBUI_SERVICE_PATH}"
+  sudo chmod 644 "${WEBUI_SERVICE_PATH}"
+
+  if command -v systemctl >/dev/null 2>&1; then
+    echo "[INSTALL] Reloading systemd for web UI service..."
+    sudo systemctl daemon-reload
+
+    echo "[INSTALL] Enabling web UI service..."
+    sudo systemctl enable "${WEBUI_SERVICE_NAME}"
+
+    echo "[INSTALL] Starting web UI service..."
+    sudo systemctl start "${WEBUI_SERVICE_NAME}"
+  fi
+else
+  echo "[INSTALL] WARNING: Web UI service template not found at ${WEBUI_SERVICE_TEMPLATE_PATH}. Skipping web UI service setup."
+fi
+
+# -----------------------------------------------------------------------------
+# 6. sudoers rule — allow app user to restart the display service without a password
+# -----------------------------------------------------------------------------
+SUDOERS_FILE="/etc/sudoers.d/dumb-smart-display-restart"
+echo "[INSTALL] Writing sudoers rule to allow passwordless service restarts..."
+# Grant the app user the ability to restart both services without a password.
+# The web UI uses this to restart the display after a config save, and to
+# restart itself after pulling an update from GitHub.
+printf '%s ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart dumb-smart-display, /usr/bin/systemctl restart dumb-smart-display-webui\n' \
+  "${APP_USER}" | sudo tee "${SUDOERS_FILE}" > /dev/null
+sudo chmod 440 "${SUDOERS_FILE}"
+echo "[INSTALL] sudoers rule written to ${SUDOERS_FILE}."
+
+# -----------------------------------------------------------------------------
+# 7. Print access info
+# -----------------------------------------------------------------------------
 echo ""
 echo "==========================================="
 echo "  Dumb Smart Display install complete."
+echo "==========================================="
+echo ""
+# Try to detect the Pi's primary local IP address for convenience
+LOCAL_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+if [ -n "${LOCAL_IP}" ]; then
+  echo "  Display dashboard : running on the e-ink panel"
+  echo "  Web Config UI     : http://${LOCAL_IP}:8080"
+  echo ""
+  echo "  Open the URL above from any device on your local network"
+  echo "  to configure the display without SSH."
+fi
 echo "==========================================="
