@@ -27,6 +27,7 @@ from flask import (
     Flask,
     Response,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -35,6 +36,7 @@ from flask import (
 )
 
 from app.webui.schema import (
+    AFTER_HOURS_SCHEMA,
     HARDWARE_SCHEMA,
     LOCATION_SCHEMA,
     MODULE_ORDER,
@@ -50,6 +52,8 @@ _CONFIG_PATH = _ROOT / "config" / "config.yml"
 _EXAMPLE_PATH = _ROOT / "config" / "config.example.yml"
 _DISPLAY_SERVICE = "dumb-smart-display"
 _WEBUI_SERVICE   = "dumb-smart-display-webui"
+_UPLOADS_DIR = Path(__file__).parent / "static" / "uploads"
+_AFTER_HOURS_PHOTO_STEM = "after_hours_photo"
 
 # ---------------------------------------------------------------------------
 # Flask app
@@ -424,6 +428,22 @@ def _parse_form(form: Any) -> Dict[str, Any]:  # noqa: ANN001
             _set_nested(hw, key, form.get(f"hardware__{key}", "off") in ("on", "true", "1", "yes"))
         elif raw is not None:
             _set_nested(hw, key, _coerce_field(raw, ftype))
+
+    # ---- After Hours (nested under hardware.after_hours) ----
+    ah: Dict[str, Any] = {}
+    for field in AFTER_HOURS_SCHEMA["fields"]:
+        key = field["key"]
+        ftype = field["type"]
+        form_key = f"hardware__after_hours__{key}"
+        if ftype == "toggle":
+            _set_nested(ah, key, form.get(form_key, "off") in ("on", "true", "1", "yes"))
+        else:
+            raw = form.get(form_key)
+            if raw is not None:
+                _set_nested(ah, key, _coerce_field(raw, ftype))
+    if ah:
+        hw.setdefault("after_hours", {}).update(ah)
+
     if hw:
         cfg["hardware"] = hw
 
@@ -444,6 +464,15 @@ def _parse_form(form: Any) -> Dict[str, Any]:  # noqa: ANN001
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
+def _get_after_hours_photo() -> str:
+    """Return the filename of the uploaded after hours photo, or '' if none exists."""
+    cfg = _load_merged_config()
+    filename = cfg.get("hardware", {}).get("after_hours", {}).get("photo", "")
+    if filename and (_UPLOADS_DIR / filename).exists():
+        return filename
+    return ""
+
 
 @app.route("/")
 def index():  # type: ignore[no-untyped-def]
@@ -491,10 +520,12 @@ def config_page():  # type: ignore[no-untyped-def]
         module_order=MODULE_ORDER,
         location_schema=LOCATION_SCHEMA,
         hardware_schema=HARDWARE_SCHEMA,
+        after_hours_schema=AFTER_HOURS_SCHEMA,
         webui_schema=WEBUI_SCHEMA,
         get_nested=_get_nested,
         auth_required=_auth_required(),
         current_version=_get_current_version(),
+        after_hours_photo=_get_after_hours_photo(),
     )
 
 
@@ -529,6 +560,63 @@ def config_save():  # type: ignore[no-untyped-def]
         )
 
     return redirect(url_for("config_page"))
+
+
+# ---------------------------------------------------------------------------
+# After Hours photo routes
+# ---------------------------------------------------------------------------
+
+_ALLOWED_PHOTO_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
+
+
+@app.route("/after-hours/upload", methods=["POST"])
+@login_required
+def after_hours_upload():  # type: ignore[no-untyped-def]
+    """Accept a multipart photo upload and persist it as the after hours image."""
+    file = request.files.get("photo")
+    if not file or not file.filename:
+        return jsonify({"ok": False, "error": "No file provided"}), 400
+
+    ext = Path(file.filename).suffix.lower()
+    if ext not in _ALLOWED_PHOTO_EXTENSIONS:
+        return jsonify({"ok": False, "error": f"Unsupported file type: {ext}"}), 400
+
+    _UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Remove any previous after_hours_photo file (different extension)
+    for old in _UPLOADS_DIR.glob(f"{_AFTER_HOURS_PHOTO_STEM}.*"):
+        try:
+            old.unlink()
+        except OSError:
+            pass
+
+    filename = f"{_AFTER_HOURS_PHOTO_STEM}{ext}"
+    dest = _UPLOADS_DIR / filename
+    file.save(str(dest))
+
+    # Update config.yml with the new photo filename
+    user_cfg = _load_user_config()
+    user_cfg.setdefault("hardware", {}).setdefault("after_hours", {})["photo"] = filename
+    _write_user_config(user_cfg)
+
+    return jsonify({"ok": True, "filename": filename})
+
+
+@app.route("/after-hours/delete", methods=["POST"])
+@login_required
+def after_hours_delete():  # type: ignore[no-untyped-def]
+    """Delete the current after hours photo and clear it from config."""
+    for old in _UPLOADS_DIR.glob(f"{_AFTER_HOURS_PHOTO_STEM}.*"):
+        try:
+            old.unlink()
+        except OSError:
+            pass
+
+    user_cfg = _load_user_config()
+    user_cfg.setdefault("hardware", {}).setdefault("after_hours", {})["photo"] = ""
+    _write_user_config(user_cfg)
+
+    return jsonify({"ok": True})
 
 
 # ---------------------------------------------------------------------------

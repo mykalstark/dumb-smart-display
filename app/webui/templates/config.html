@@ -322,7 +322,53 @@
 </div>
 
 {# ------------------------------------------------------------------ #}
-{# 5. Web UI settings                                                   #}
+{# 5. After Hours                                                       #}
+{# ------------------------------------------------------------------ #}
+<div class="card">
+  <div class="card-header">
+    <h2>{{ after_hours_schema.label }}</h2>
+    <span style="font-size:12px; color:var(--muted);">Freeze display and show a photo overnight</span>
+  </div>
+  <div class="card-body">
+    <div class="form-grid">
+      {% set ah = cfg.get('hardware', {}).get('after_hours', {}) %}
+      {% for field in after_hours_schema.fields %}
+        {{ render_field(field, 'hardware__after_hours', get_nested(ah, field.key, '')) }}
+      {% endfor %}
+    </div>
+
+    <hr style="border:none; border-top:1px solid var(--border); margin:16px 0;">
+
+    <div>
+      <p style="font-size:13px; font-weight:600; margin:0 0 8px;">Display Photo</p>
+
+      <div id="ah-preview-wrap" {% if not after_hours_photo %}style="display:none;"{% endif %}>
+        <img id="ah-preview-img"
+             src="{{ '/static/uploads/' ~ after_hours_photo if after_hours_photo else '' }}"
+             alt="After hours photo preview"
+             style="max-width:240px; max-height:180px; border:1px solid var(--border); border-radius:6px; display:block; margin-bottom:8px;" />
+      </div>
+      <div id="ah-placeholder"
+           style="{% if after_hours_photo %}display:none;{% else %}display:flex;{% endif %} width:240px; height:135px; background:var(--border); border:1px dashed var(--muted); border-radius:6px; align-items:center; justify-content:center; color:var(--muted); font-size:12px; margin-bottom:8px;">
+        No photo uploaded
+      </div>
+
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <label class="btn-secondary" style="cursor:pointer; display:inline-block;">
+          Upload Photo
+          <input type="file" id="ah-file-input" accept="image/*" style="display:none;">
+        </label>
+        <button type="button" id="ah-delete-btn" class="btn-secondary"
+                {% if not after_hours_photo %}style="display:none;"{% endif %}
+                onclick="ahDelete()">Delete</button>
+      </div>
+      <div id="ah-status" style="font-size:12px; color:var(--muted); margin-top:6px;"></div>
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# 6. Web UI settings                                                   #}
 {# ------------------------------------------------------------------ #}
 <div class="card">
   <div class="card-header">
@@ -803,6 +849,63 @@ function togglePw(id, btn) {
     if (_source) { _source.close(); _source = null; }
     elModal.hidden = true;
     document.body.style.overflow = '';
+  };
+})();
+</script>
+
+{# ------------------------------------------------------------------ #}
+{# After Hours photo upload / delete — JavaScript                       #}
+{# ------------------------------------------------------------------ #}
+<script>
+(function () {
+  var fileInput   = document.getElementById('ah-file-input');
+  var previewWrap = document.getElementById('ah-preview-wrap');
+  var previewImg  = document.getElementById('ah-preview-img');
+  var placeholder = document.getElementById('ah-placeholder');
+  var deleteBtn   = document.getElementById('ah-delete-btn');
+  var status      = document.getElementById('ah-status');
+
+  if (!fileInput) { return; }
+
+  fileInput.addEventListener('change', function () {
+    var file = fileInput.files[0];
+    if (!file) { return; }
+    var fd = new FormData();
+    fd.append('photo', file);
+    status.textContent = 'Uploading\u2026';
+    fetch('/after-hours/upload', { method: 'POST', body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.ok) {
+          previewImg.src = '/static/uploads/' + data.filename + '?t=' + Date.now();
+          previewWrap.style.display = '';
+          placeholder.style.display = 'none';
+          deleteBtn.style.display = '';
+          status.textContent = 'Photo uploaded successfully.';
+        } else {
+          status.textContent = 'Upload failed: ' + (data.error || 'unknown error');
+        }
+      })
+      .catch(function (err) { status.textContent = 'Upload error: ' + err; });
+    fileInput.value = '';
+  });
+
+  window.ahDelete = function () {
+    status.textContent = 'Deleting\u2026';
+    fetch('/after-hours/delete', { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.ok) {
+          previewImg.src = '';
+          previewWrap.style.display = 'none';
+          placeholder.style.display = 'flex';
+          deleteBtn.style.display = 'none';
+          status.textContent = 'Photo deleted.';
+        } else {
+          status.textContent = 'Delete failed.';
+        }
+      })
+      .catch(function (err) { status.textContent = 'Delete error: ' + err; });
   };
 })();
 </script>

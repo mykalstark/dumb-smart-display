@@ -116,6 +116,33 @@ HARDWARE_SCHEMA: SectionSchema = {
 }
 
 # ---------------------------------------------------------------------------
+# After Hours section
+# ---------------------------------------------------------------------------
+AFTER_HOURS_SCHEMA: SectionSchema = {
+    "label": "After Hours",
+    "fields": [
+        {
+            "key": "enabled",
+            "label": "Enable After Hours Mode",
+            "type": "toggle",
+            "help": "Freeze the display and show a photo during the configured window.",
+        },
+        {
+            "key": "start",
+            "label": "Start Time",
+            "type": "time_of_day",
+            "help": "When after hours mode begins each night.",
+        },
+        {
+            "key": "end",
+            "label": "End Time",
+            "type": "time_of_day",
+            "help": "When after hours mode ends each morning.",
+        },
+    ],
+}
+
+# ---------------------------------------------------------------------------
 # Web UI section
 # ---------------------------------------------------------------------------
 WEBUI_SCHEMA: SectionSchema = {

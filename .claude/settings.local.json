@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from app.webui.schema import AFTER_HOURS_SCHEMA; print\\(''schema OK:'', AFTER_HOURS_SCHEMA[''label'']\\)\")",
+      "Bash(python -c \"from app.webui import server; print\\(''server imports OK''\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \"from app.webui.schema import AFTER_HOURS_SCHEMA; print\\(''schema OK:'', AFTER_HOURS_SCHEMA[''label'']\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \"from app.webui import server; print\\(''server imports OK''\\)\")",
+      "Bash(python -m py_compile app/webui/schema.py app/main.py)",
+      "Bash(python -m py_compile app/webui/server.py)"
+    ]
+  }
+}

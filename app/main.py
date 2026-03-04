@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 import yaml
-from PIL import ImageFont  # <--- Need this to load fonts
+from PIL import Image, ImageDraw, ImageFont  # <--- Need this to load fonts
 
 from app.buttons import init_buttons
 from app.core.module_manager import ModuleManager
@@ -18,6 +18,7 @@ from app.display import Display
 
 DEFAULT_CONFIG_PATH = Path("config/config.yml")
 DEFAULT_CONFIG_FALLBACK = Path("config/config.example.yml")
+_UPLOADS_DIR = Path(__file__).parent / "webui" / "static" / "uploads"
 
 
 def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
@@ -133,6 +134,41 @@ def build_module_manager(config: Dict[str, Any], fonts: Dict[str, Any]) -> Modul
     return manager
 
 
+def _render_after_hours(display: "Display", config: Dict[str, Any], fonts: Dict[str, Any]) -> None:
+    """Render the after hours screen once (photo or fallback message)."""
+    ah_cfg = config.get("hardware", {}).get("after_hours", {})
+    photo_name = ah_cfg.get("photo", "")
+    w, h = display.driver.width, display.driver.height
+    image = None
+
+    if photo_name:
+        photo_path = _UPLOADS_DIR / photo_name
+        try:
+            raw = Image.open(photo_path).convert("RGB")
+            raw.thumbnail((w, h), Image.LANCZOS)
+            canvas = Image.new("RGB", (w, h), (255, 255, 255))
+            offset = ((w - raw.width) // 2, (h - raw.height) // 2)
+            canvas.paste(raw, offset)
+            image = canvas
+        except Exception as exc:
+            print(f"[MAIN] After hours photo load failed: {exc}", flush=True)
+
+    if image is None:
+        image = Image.new("1", (w, h), 255)
+        draw = ImageDraw.Draw(image)
+        font = fonts.get("default")
+        lines = ["After Hours", "No photo configured"]
+        line_h = draw.textbbox((0, 0), lines[0], font=font)[3]
+        total_h = line_h * len(lines) + 8 * (len(lines) - 1)
+        y = (h - total_h) // 2
+        for line in lines:
+            tw = draw.textbbox((0, 0), line, font=font)[2]
+            draw.text(((w - tw) // 2, y), line, font=font, fill=0)
+            y += line_h + 8
+
+    display.render(image, force_full_refresh=True)
+
+
 def main() -> None:
     args = parse_args()
     config_path = Path(args.config)
@@ -188,38 +224,36 @@ def main() -> None:
     init_buttons(display, simulate=display.simulate, on_event=on_button)
 
     cycle_delay = int(config.get("hardware", {}).get("cycle_seconds", 30))
-    
-    # Quiet Hours Config
-    quiet_cfg = config.get("hardware", {}).get("quiet_hours", {})
-    quiet_start_str = quiet_cfg.get("start")
-    quiet_end_str = quiet_cfg.get("end")
 
     max_cycles = args.cycles
     cycle_count = 0
+    _after_hours_rendered = False
 
-    print(f"[MAIN] Cycle delay: {cycle_delay}s. Quiet hours: {quiet_start_str}-{quiet_end_str}")
+    print(f"[MAIN] Cycle delay: {cycle_delay}s.", flush=True)
 
     try:
         while True:
-            # 1. Check Quiet Hours
-            is_quiet = False
-            if quiet_start_str and quiet_end_str:
-                now = datetime.now()
-                current_time = now.strftime("%H:%M")
-                
-                # Handle range crossing midnight (e.g. 22:00 to 06:00)
-                if quiet_start_str > quiet_end_str:
-                    if current_time >= quiet_start_str or current_time < quiet_end_str:
-                        is_quiet = True
-                else:
-                    if quiet_start_str <= current_time < quiet_end_str:
-                        is_quiet = True
+            # 1. Check After Hours
+            ah_cfg = config.get("hardware", {}).get("after_hours", {})
+            is_after_hours = False
+            if ah_cfg.get("enabled", False):
+                ah_start = ah_cfg.get("start", "")
+                ah_end   = ah_cfg.get("end", "")
+                if ah_start and ah_end:
+                    current_time = datetime.now().strftime("%H:%M")
+                    if ah_start > ah_end:   # crosses midnight
+                        is_after_hours = current_time >= ah_start or current_time < ah_end
+                    else:
+                        is_after_hours = ah_start <= current_time < ah_end
 
-            if is_quiet:
-                # Sleep and retry. We use sleep instead of wait here to save resources,
-                # effectively ignoring buttons during quiet hours (unless we wanted to wake).
+            if is_after_hours:
+                if not _after_hours_rendered:
+                    _render_after_hours(display, config, fonts)
+                    _after_hours_rendered = True
                 time.sleep(60)
                 continue
+
+            _after_hours_rendered = False  # reset when we exit the after hours window
 
             # 2. Render
             render_active_module()
