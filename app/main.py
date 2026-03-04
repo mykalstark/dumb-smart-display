@@ -151,11 +151,19 @@ def _render_after_hours(display: "Display", config: Dict[str, Any], fonts: Dict[
             raw = Image.open(photo_path).convert("L")
             raw.thumbnail((w, h), Image.LANCZOS)
 
-            # 2. Boost contrast and sharpness before dithering.
-            #    Dithering "softens" an image visually by turning mid-tones into
-            #    stipple patterns; pre-enhancing gives it more to work with and
-            #    produces a crisper, more recognisable result on e-ink.
-            raw = ImageEnhance.Contrast(raw).enhance(1.8)
+            # 2. Tone-map before dithering.
+            #
+            #    Order matters:
+            #      a) Brightness first — shifts the whole tonal range so the
+            #         bulk of pixels land near the mid-point (~128) where the
+            #         dither algorithm can produce a balanced mix of black and
+            #         white pixels.  Bright/outdoor photos need a significant
+            #         darkening (0.70) or most pixels will dither to white.
+            #      b) Contrast next — gently stretches the shifted range so
+            #         shadows stay dark and highlights stay bright.
+            #      c) Sharpness last — recovers edge detail lost by thumbnail.
+            raw = ImageEnhance.Brightness(raw).enhance(0.72)
+            raw = ImageEnhance.Contrast(raw).enhance(1.4)
             raw = ImageEnhance.Sharpness(raw).enhance(2.0)
 
             # 3. Letterbox onto a white canvas so the image is exactly w × h.
@@ -177,6 +185,7 @@ def _render_after_hours(display: "Display", config: Dict[str, Any], fonts: Dict[
             print(f"[MAIN] After hours photo load failed: {exc}", flush=True)
 
     if image is None:
+        # Fallback: plain white canvas with a centred status message.
         image = Image.new("1", (w, h), 255)
         draw = ImageDraw.Draw(image)
         font = fonts.get("default")
@@ -189,7 +198,10 @@ def _render_after_hours(display: "Display", config: Dict[str, Any], fonts: Dict[
             draw.text(((w - tw) // 2, y), line, font=font, fill=0)
             y += line_h + 8
 
-    display.render(image, force_full_refresh=True)
+    # Use render_image() directly (not render()) so the photo is full-bleed —
+    # render() always calls _add_border() which is correct for UI screens but
+    # adds an unwanted decorative frame around photos.
+    display.render_image(image, force_full_refresh=True)
 
 
 def main() -> None:
