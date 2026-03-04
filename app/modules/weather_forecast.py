@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import math
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import requests
@@ -13,14 +14,16 @@ from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, Layout
 
 log = logging.getLogger(__name__)
 
+# Path to the bundled Weather Icons font (MIT licence, Erik Flowers)
+# https://github.com/erikflowers/weather-icons
+_ICON_FONT_PATH = Path(__file__).parent.parent / "assets" / "fonts" / "weathericons-regular-webfont.ttf"
+
 # ---------------------------------------------------------------------------
 # WMO weather code → icon type mapping
 # https://open-meteo.com/en/docs#weathervariables
 # ---------------------------------------------------------------------------
 def _wmo_to_icon(code: int) -> str:
-    if code == 0:
-        return "sun"
-    if code == 1:
+    if code <= 1:
         return "sun"
     if code == 2:
         return "sun_cloud"
@@ -39,16 +42,27 @@ def _wmo_to_icon(code: int) -> str:
     return "cloud"
 
 
+# Weather Icons font codepoints (PUA unicode, weather-icons by Erik Flowers, MIT)
+_WMO_GLYPH: Dict[str, int] = {
+    "sun":       0xf00d,  # wi-day-sunny
+    "sun_cloud": 0xf002,  # wi-day-cloudy
+    "cloud":     0xf013,  # wi-cloudy
+    "fog":       0xf014,  # wi-fog
+    "drizzle":   0xf01c,  # wi-sprinkle
+    "rain":      0xf019,  # wi-rain
+    "snow":      0xf01b,  # wi-snow
+    "storm":     0xf01e,  # wi-thunderstorm
+}
+
+
 # ---------------------------------------------------------------------------
-# Geometric icon drawing helpers
+# Geometric icon drawing helpers — fallback when icon font is unavailable.
 # All icons are drawn centred on (cx, cy) within a bounding box of ~size px.
 # ---------------------------------------------------------------------------
 
 def _draw_sun(draw: ImageDraw.ImageDraw, cx: int, cy: int, size: int) -> None:
     r = size // 4
-    # Centre circle
     draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=0, width=2)
-    # 8 rays
     ray_inner = r + 4
     ray_outer = r + size // 5
     for i in range(8):
@@ -65,22 +79,18 @@ def _draw_cloud_shape(
 ) -> None:
     """Draw a simple stylised cloud centred on (cx, cy) with the given width/height."""
     fill = 0 if filled else None
-    # Main body — wide oval
     bx0, by0, bx1, by1 = cx - w // 2, cy - h // 4, cx + w // 2, cy + h // 4
     draw.ellipse([bx0, by0, bx1, by1], outline=0, width=2, fill=fill)
-    # Left bump
     lbr = h // 3
     draw.ellipse(
         [cx - w // 3 - lbr, cy - h // 4 - lbr, cx - w // 3 + lbr, cy - h // 4 + lbr],
         outline=0, width=2, fill=fill,
     )
-    # Centre-left bump (tallest)
     cbr = int(h * 0.42)
     draw.ellipse(
         [cx - cbr, cy - h // 4 - cbr, cx + cbr, cy - h // 4 + cbr],
         outline=0, width=2, fill=fill,
     )
-    # Right bump
     rbr = h // 4
     draw.ellipse(
         [cx + w // 5 - rbr, cy - h // 4 - rbr, cx + w // 5 + rbr, cy - h // 4 + rbr],
@@ -93,7 +103,6 @@ def _draw_cloud(draw: ImageDraw.ImageDraw, cx: int, cy: int, size: int) -> None:
 
 
 def _draw_sun_cloud(draw: ImageDraw.ImageDraw, cx: int, cy: int, size: int) -> None:
-    # Small sun offset upper-left, cloud lower-right
     sun_cx = cx - size // 5
     sun_cy = cy - size // 6
     sun_r = size // 6
@@ -110,7 +119,6 @@ def _draw_sun_cloud(draw: ImageDraw.ImageDraw, cx: int, cy: int, size: int) -> N
              (sun_cx + ray_o * math.cos(angle), sun_cy + ray_o * math.sin(angle))],
             fill=0, width=1,
         )
-    # Cloud slightly lower-right, covering part of the sun
     cloud_cx = cx + size // 8
     cloud_cy = cy + size // 8
     _draw_cloud_shape(draw, cloud_cx, cloud_cy, int(size * 0.65), size // 3)
@@ -120,7 +128,6 @@ def _draw_rain(draw: ImageDraw.ImageDraw, cx: int, cy: int, size: int, *, heavy:
     cloud_h = size // 3
     cloud_top_cy = cy - size // 7
     _draw_cloud_shape(draw, cx, cloud_top_cy, int(size * 0.85), cloud_h)
-    # Rain drops: 3 diagonal lines below the cloud
     drop_count = 4 if heavy else 3
     spacing = size // (drop_count + 1)
     drop_len = size // 5
@@ -134,7 +141,6 @@ def _draw_drizzle(draw: ImageDraw.ImageDraw, cx: int, cy: int, size: int) -> Non
     cloud_h = size // 3
     cloud_top_cy = cy - size // 7
     _draw_cloud_shape(draw, cx, cloud_top_cy, int(size * 0.85), cloud_h)
-    # Light drizzle dots
     drop_top = cloud_top_cy + cloud_h // 2 + 8
     for i in range(3):
         x = cx - size // 4 + i * (size // 4)
@@ -146,13 +152,11 @@ def _draw_snow(draw: ImageDraw.ImageDraw, cx: int, cy: int, size: int) -> None:
     cloud_h = size // 3
     cloud_top_cy = cy - size // 8
     _draw_cloud_shape(draw, cx, cloud_top_cy, int(size * 0.85), cloud_h)
-    # Snow dots (small asterisks / dots)
     dot_top = cloud_top_cy + cloud_h // 2 + 8
     for i in range(3):
         x = cx - size // 3 + i * (size // 3) + size // 6
         y = dot_top
         r = 3
-        # Six-pointed star shape: 3 lines through centre
         for angle_deg in (0, 60, 120):
             ang = math.radians(angle_deg)
             draw.line(
@@ -160,7 +164,6 @@ def _draw_snow(draw: ImageDraw.ImageDraw, cx: int, cy: int, size: int) -> None:
                  (x + r * math.cos(ang), y + r * math.sin(ang))],
                 fill=0, width=2,
             )
-        # Second row
         x2 = cx - size // 6 + i * (size // 3)
         y2 = dot_top + size // 6
         for angle_deg in (0, 60, 120):
@@ -176,22 +179,19 @@ def _draw_storm(draw: ImageDraw.ImageDraw, cx: int, cy: int, size: int) -> None:
     cloud_h = size // 3
     cloud_top_cy = cy - size // 5
     _draw_cloud_shape(draw, cx, cloud_top_cy, int(size * 0.9), cloud_h, filled=True)
-    # Lightning bolt below cloud
     bolt_top = cloud_top_cy + cloud_h // 2 + 4
     bolt_w = size // 5
     bolt_h = size // 3
-    # Zig-zag: top-right → middle-left → bottom-right
     pts = [
         (cx + bolt_w // 2, bolt_top),
         (cx, bolt_top + bolt_h // 2),
         (cx + bolt_w // 3, bolt_top + bolt_h // 2),
         (cx - bolt_w // 2, bolt_top + bolt_h),
     ]
-    draw.line(pts, fill=255, width=3)  # white on filled cloud bg
+    draw.line(pts, fill=255, width=3)
 
 
 def _draw_fog(draw: ImageDraw.ImageDraw, cx: int, cy: int, size: int) -> None:
-    # Three horizontal rounded lines
     line_w = int(size * 0.8)
     spacing = size // 4
     for i in range(3):
@@ -239,6 +239,11 @@ class Module(BaseDisplayModule):
         self._last_fetch: Optional[datetime] = None
         self._error: Optional[str] = None
 
+        # Cache for loaded icon fonts keyed by size; None availability flag
+        # is set on first load attempt so we only log the warning once.
+        self._icon_font_cache: Dict[int, Any] = {}
+        self._icon_font_available: Optional[bool] = None
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -261,7 +266,6 @@ class Module(BaseDisplayModule):
     def _fmt_precip(self, val: Optional[float]) -> str:
         if val is None or val <= 0:
             return ""
-        unit = "in" if self._unit_is_fahrenheit() else "mm"
         if self._unit_is_fahrenheit():
             return f"{val:.2f}in".rstrip("0").rstrip(".")
         return f"{val:.1f}mm"
@@ -277,8 +281,53 @@ class Module(BaseDisplayModule):
         except Exception:
             return self.fonts.get("default")
 
+    def _load_icon_font(self, size: int) -> Optional[Any]:
+        """Load the bundled Weather Icons font at *size*.
+
+        Returns the font object, or None if the font file is not present
+        (in which case the module falls back to PIL-drawn icons).
+        Only logs the missing-font warning once per module instance.
+        """
+        if self._icon_font_available is False:
+            return None
+        if size in self._icon_font_cache:
+            return self._icon_font_cache[size]
+        try:
+            font = ImageFont.truetype(str(_ICON_FONT_PATH), size)
+            self._icon_font_cache[size] = font
+            self._icon_font_available = True
+            return font
+        except Exception:
+            log.info(
+                "weather_forecast: Weather Icons font not found at %s — using PIL fallback",
+                _ICON_FONT_PATH,
+            )
+            self._icon_font_available = False
+            return None
+
+    def _load_day_font(self, col_w: int) -> Any:
+        """Return the largest Bold font size where 'WED' (widest day abbrev)
+        fits within col_w minus 16 px of horizontal padding."""
+        target_w = col_w - 16
+        bold_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+        # Probe from large → small in steps of 2 px
+        for size in range(60, 18, -2):
+            try:
+                f = ImageFont.truetype(bold_path, size)
+            except Exception:
+                f = self.fonts.get("default")
+            dummy = Image.new("1", (1, 1))
+            dummy_draw = ImageDraw.Draw(dummy)
+            max_w = max(
+                self._get_text_size(dummy_draw, d, f)[0]
+                for d in ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+            )
+            if max_w <= target_w:
+                return f
+        return self._load_font(18)
+
     # ------------------------------------------------------------------
-    # Data fetching
+    # Lifecycle
     # ------------------------------------------------------------------
     def refresh_interval(self) -> Optional[int]:
         return self.refresh_seconds
@@ -296,6 +345,9 @@ class Module(BaseDisplayModule):
     def supported_layouts(self) -> Sequence[LayoutPreset]:
         return (DEFAULT_LAYOUTS[0],)
 
+    # ------------------------------------------------------------------
+    # Data fetching
+    # ------------------------------------------------------------------
     def _fetch(self) -> None:
         self._last_fetch = datetime.now()
 
@@ -376,45 +428,58 @@ class Module(BaseDisplayModule):
             draw.text(((width - tw) // 2, (height - th) // 2), msg, font=default_font, fill=0)
             return image
 
-        # Fixed, legible font sizes — previously scaled proportionally to row height
-        # which produced ~58px high / ~47px low on a 480px display.
-        header_font = self._load_font(18)
-        day_font    = self._load_font(15)
-        date_font   = self._load_font(11)
-        high_font   = self._load_font(20)
-        low_font    = self._load_font(15)
-        precip_font = self._load_font(11)
+        # --- Fixed layout zones (px) ---
+        HEADER_H  = 32   # location name header
+        TOP_PAD   = 8    # space above day name
+        DAY_H     = 58   # zone for large day-name text
+        GAP1      = 6    # gap: day name → icon
+        ICON_H    = 180  # zone for weather icon glyph / PIL drawing
+        GAP2      = 6    # gap: icon → date
+        DATE_H    = 24   # zone for date number
+        GAP3      = 4    # gap: date → separator
+        SEP_H     = 1    # separator line
+        GAP4      = 4    # gap: separator → high temp
+        HIGH_H    = 46   # zone for high temperature
+        GAP5      = 4    # gap: high → low
+        LOW_H     = 28   # zone for low temperature
+        GAP6      = 4    # gap: low → precip
+        PRECIP_H  = 18   # zone for precipitation (only drawn when non-zero)
+        BOT_PAD   = 8    # space below last row
+
+        col_content_h = (
+            TOP_PAD + DAY_H + GAP1 + ICON_H + GAP2
+            + DATE_H + GAP3 + SEP_H + GAP4
+            + HIGH_H + GAP5 + LOW_H + GAP6 + PRECIP_H + BOT_PAD
+        )
+
+        # Fonts
+        header_font = self._load_font(22)
+        n_days      = len(self._days)
+        col_w       = width // n_days
+        day_font    = self._load_day_font(col_w)
+        date_font   = self._load_font(18)
+        high_font   = self._load_font(30)
+        low_font    = self._load_font(20)
+        precip_font = self._load_font(14)
+
+        # Icon font (Weather Icons TTF); None triggers PIL fallback
+        ICON_FONT_SIZE = 130
+        icon_font = self._load_icon_font(ICON_FONT_SIZE)
 
         # --- Header ---
-        HEADER_H = 34
         hdr_text = self.location_name
         hw, hh = self._get_text_size(draw, hdr_text, header_font)
         draw.text(((width - hw) // 2, (HEADER_H - hh) // 2), hdr_text, font=header_font, fill=0)
         draw.line([(0, HEADER_H), (width, HEADER_H)], fill=0, width=1)
 
-        n_days = len(self._days)
-        col_w = width // n_days
         body_top = HEADER_H + 1
-        body_h = height - body_top
+        body_h   = height - body_top
 
-        # Row heights — proportional with min/max caps so they scale sensibly on
-        # any display size while keeping text from dominating the layout.
-        day_h     = min(max(int(body_h * 0.07), 20), 32)
-        date_h    = min(max(int(body_h * 0.05), 14), 22)
-        icon_zone = min(max(int(body_h * 0.43), 70), 200)
-        sep_h     = 8   # space consumed by separator line
-        high_h    = min(max(int(body_h * 0.08), 22), 32)
-        low_h     = min(max(int(body_h * 0.07), 18), 26)
-        precip_h  = min(max(int(body_h * 0.06), 14), 22)
-        top_pad   = 8
+        # Vertically centre the content block if shorter than the body area
+        v_offset = max((body_h - col_content_h) // 2, 0)
 
-        content_h = top_pad + day_h + date_h + icon_zone + sep_h + high_h + low_h + precip_h
-
-        # Vertically centre the content block within each column body
-        v_offset = max((body_h - content_h) // 2, 0)
-
-        # Icon fits within the zone height and the column width
-        icon_size = min(icon_zone - 10, col_w - 20)
+        # Fallback PIL icon size fits in the icon zone and column width
+        pil_icon_size = min(ICON_H - 10, col_w - 20)
 
         for i, day in enumerate(self._days):
             x0 = i * col_w
@@ -425,53 +490,61 @@ class Module(BaseDisplayModule):
             if i > 0:
                 draw.line([(x0, body_top + 6), (x0, height - 6)], fill=0, width=1)
 
-            y = body_top + v_offset + top_pad
+            y = body_top + v_offset
 
-            # Day label ("MON", "TUE", …)
+            # Today indicator — thin bar at the very top of today's column
+            # (replaces the previous white-on-black full-column inversion)
+            if i == 0:
+                draw.rectangle([(x0, y), (x1 - 1, y + 2)], fill=0)
+
+            y += TOP_PAD
+
+            # Day label ("MON", "TUE", …) — auto-fit large bold font
             dtxt = day["day"].upper()
             dw, dh = self._get_text_size(draw, dtxt, day_font)
-            draw.text((cx - dw // 2, y + (day_h - dh) // 2), dtxt, font=day_font, fill=0)
-            y += day_h
+            draw.text((cx - dw // 2, y + (DAY_H - dh) // 2), dtxt, font=day_font, fill=0)
+            y += DAY_H + GAP1
 
-            # Date number ("1", "15", …) — small, below the day label
+            # Weather icon — font glyph preferred; PIL geometry as fallback
+            icon_type = day["icon"]
+            icon_cy   = y + ICON_H // 2
+            if icon_font is not None:
+                glyph = chr(_WMO_GLYPH.get(icon_type, _WMO_GLYPH["cloud"]))
+                gw, gh = self._get_text_size(draw, glyph, icon_font)
+                draw.text((cx - gw // 2, icon_cy - gh // 2), glyph, font=icon_font, fill=0)
+            else:
+                _draw_icon(draw, icon_type, cx, icon_cy, pil_icon_size)
+            y += ICON_H + GAP2
+
+            # Date number ("1", "15", …) — small, below icon
             num = day["dt"].strftime("%d").lstrip("0") or "1"
             nw, nh = self._get_text_size(draw, num, date_font)
-            draw.text((cx - nw // 2, y + (date_h - nh) // 2), num, font=date_font, fill=0)
-            y += date_h
+            draw.text((cx - nw // 2, y + (DATE_H - nh) // 2), num, font=date_font, fill=0)
+            y += DATE_H + GAP3
 
-            # Weather icon centred within icon_zone
-            _draw_icon(draw, day["icon"], cx, y + icon_zone // 2, icon_size)
-            y += icon_zone
+            # Separator between date and temperatures
+            draw.line([(x0 + 8, y), (x1 - 8, y)], fill=0, width=1)
+            y += SEP_H + GAP4
 
-            # Thin separator between icon and temperature rows
-            draw.line([(x0 + 8, y + 2), (x1 - 8, y + 2)], fill=0, width=1)
-            y += sep_h
-
-            # High temperature — larger font for primary reading
+            # High temperature (primary reading — largest font in the temp section)
             htxt = self._fmt_temp(day["high"])
             hw2, hh2 = self._get_text_size(draw, htxt, high_font)
-            draw.text((cx - hw2 // 2, y + (high_h - hh2) // 2), htxt, font=high_font, fill=0)
-            y += high_h
+            draw.text((cx - hw2 // 2, y + (HIGH_H - hh2) // 2), htxt, font=high_font, fill=0)
+            y += HIGH_H + GAP5
 
             # Low temperature — smaller font, visually subordinate
             ltxt = self._fmt_temp(day["low"])
             lw, lh = self._get_text_size(draw, ltxt, low_font)
-            draw.text((cx - lw // 2, y + (low_h - lh) // 2), ltxt, font=low_font, fill=0)
-            y += low_h
+            draw.text((cx - lw // 2, y + (LOW_H - lh) // 2), ltxt, font=low_font, fill=0)
+            y += LOW_H + GAP6
 
-            # Precipitation amount (only when non-zero)
+            # Precipitation (only when non-zero)
             pstr = self._fmt_precip(day["precip"])
             if pstr:
                 pw, ph = self._get_text_size(draw, pstr, precip_font)
                 draw.text(
-                    (cx - pw // 2, y + max((precip_h - ph) // 2, 2)),
+                    (cx - pw // 2, y + max((PRECIP_H - ph) // 2, 2)),
                     pstr, font=precip_font, fill=0,
                 )
-
-        # Highlight today (always index 0 in Open-Meteo response) by inverting
-        # the column body — white-on-black stands out cleanly on e-ink.
-        today_crop = image.crop((0, body_top, col_w, height))
-        today_inv = today_crop.convert("L").point(lambda x: 255 - x).convert("1")
-        image.paste(today_inv, (0, body_top))
 
         return image
