@@ -145,18 +145,50 @@
     <div class="update-row">
       <div>
         <p style="font-size:13px; color:var(--muted); margin-bottom:4px;">
-          Pull the latest code from GitHub. If updates are available they will be
-          applied and both the display and this web UI will restart automatically.
+          Pull the latest code from GitHub and run the install script. If updates
+          are available they will be applied and both services will restart automatically.
         </p>
       </div>
       <div class="update-actions">
         <a href="{{ url_for('update_check') }}" class="btn-secondary">Check for Updates</a>
-        <form method="POST" action="{{ url_for('do_update') }}" style="margin:0;"
-              onsubmit="return confirm('Pull the latest code from GitHub and restart both services?')">
-          <button type="submit" class="btn-primary">Update &amp; Restart</button>
-        </form>
+        <button type="button" class="btn-primary" onclick="openUpdateModal()">Update &amp; Restart</button>
       </div>
     </div>
+  </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# Update progress modal                                                #}
+{# ------------------------------------------------------------------ #}
+<div id="upd-modal" hidden aria-modal="true" role="dialog">
+  <div class="upd-backdrop" onclick="void(0)"></div>
+  <div class="upd-box">
+
+    <h3 class="upd-title" id="upd-title">Updating…</h3>
+
+    {# Four-stage progress bar #}
+    <div class="upd-stages">
+      <div class="upd-stage-pip" id="upd-pip-1"></div>
+      <div class="upd-stage-pip" id="upd-pip-2"></div>
+      <div class="upd-stage-pip" id="upd-pip-3"></div>
+      <div class="upd-stage-pip" id="upd-pip-4"></div>
+    </div>
+    <div class="upd-track">
+      <div class="upd-bar" id="upd-bar"></div>
+    </div>
+    <div class="upd-stage-label" id="upd-stage-label">Starting…</div>
+
+    {# Scrollable log terminal #}
+    <div class="upd-log" id="upd-log" aria-live="polite"></div>
+
+    {# Result banner — shown on finish #}
+    <div id="upd-result"></div>
+
+    {# Close button — only visible after an error or uptodate result #}
+    <div id="upd-close-row" hidden style="text-align:right;margin-top:12px;">
+      <button type="button" class="btn-secondary" onclick="closeUpdateModal()">Close</button>
+    </div>
+
   </div>
 </div>
 
@@ -363,5 +395,258 @@ function togglePw(id, btn) {
   if (inp.type === 'password') { inp.type = 'text'; btn.textContent = 'Hide'; }
   else { inp.type = 'password'; btn.textContent = 'Show'; }
 }
+</script>
+
+{# ------------------------------------------------------------------ #}
+{# Update modal — styles                                                #}
+{# ------------------------------------------------------------------ #}
+<style>
+/* Backdrop */
+.upd-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 200;
+}
+
+/* Centred card */
+.upd-box {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 201;
+  width: min(640px, 92vw);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0,0,0,.18);
+  padding: 28px 28px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.upd-title {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0;
+}
+
+/* Stage pips row */
+.upd-stages {
+  display: flex;
+  gap: 6px;
+}
+.upd-stage-pip {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background .4s;
+}
+.upd-stage-pip.active   { background: var(--accent); }
+.upd-stage-pip.complete { background: var(--accent); }
+.upd-stage-pip.err      { background: #dc2626; }
+
+/* Animated progress bar */
+.upd-track {
+  width: 100%;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.upd-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width .5s ease;
+}
+.upd-bar.complete { background: #16a34a; }
+.upd-bar.err      { background: #dc2626; }
+
+.upd-stage-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: -6px;
+}
+
+/* Terminal log */
+.upd-log {
+  background: #0f0f0f;
+  color: #86efac;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  border-radius: 6px;
+  padding: 10px 12px;
+  height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.upd-log .log-muted { color: #4ade80; opacity: .6; }
+
+/* Result banners */
+.upd-result-ok  {
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
+  color: var(--success-fg);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 13px;
+}
+.upd-result-err {
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  color: var(--error-fg);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 13px;
+}
+</style>
+
+{# ------------------------------------------------------------------ #}
+{# Update modal — JavaScript                                            #}
+{# ------------------------------------------------------------------ #}
+<script>
+(function () {
+  var _source = null;
+
+  /* Stage metadata -------------------------------------------------- */
+  var STAGES = {
+    '1': { label: 'Checking for updates…', pct: '15%',  pip: 1 },
+    '2': { label: 'Pulling latest code…',  pct: '38%',  pip: 2 },
+    '3': { label: 'Running install script…', pct: '78%', pip: 3 },
+    '4': { label: 'Restarting services…', pct: '92%',  pip: 4 },
+  };
+
+  /* DOM refs (resolved on open) ------------------------------------- */
+  var elModal, elBar, elStageLabel, elLog, elResult, elCloseRow;
+  var elPips = [];
+
+  function resolveEls() {
+    elModal      = document.getElementById('upd-modal');
+    elBar        = document.getElementById('upd-bar');
+    elStageLabel = document.getElementById('upd-stage-label');
+    elLog        = document.getElementById('upd-log');
+    elResult     = document.getElementById('upd-result');
+    elCloseRow   = document.getElementById('upd-close-row');
+    elPips       = [1,2,3,4].map(function(n){ return document.getElementById('upd-pip-' + n); });
+  }
+
+  /* Helpers --------------------------------------------------------- */
+  function setBar(pct, cls) {
+    elBar.style.width = pct;
+    if (cls) { elBar.className = 'upd-bar ' + cls; }
+  }
+
+  function setPips(activeIdx, cls) {
+    elPips.forEach(function(pip, i) {
+      pip.className = 'upd-stage-pip' +
+        (i < activeIdx  ? ' complete' :
+         i === activeIdx ? (' ' + (cls || 'active')) : '');
+    });
+  }
+
+  function appendLog(text, muted) {
+    var line = document.createElement('div');
+    line.textContent = text;
+    if (muted) { line.className = 'log-muted'; }
+    elLog.appendChild(line);
+    elLog.scrollTop = elLog.scrollHeight;
+  }
+
+  function showResult(html, isOk) {
+    elResult.innerHTML = '<div class="' + (isOk ? 'upd-result-ok' : 'upd-result-err') + '">' + html + '</div>';
+  }
+
+  /* Open ------------------------------------------------------------- */
+  window.openUpdateModal = function () {
+    resolveEls();
+
+    /* Reset */
+    elModal.hidden   = false;
+    elCloseRow.hidden = true;
+    elResult.innerHTML = '';
+    elLog.innerHTML  = '';
+    elBar.className  = 'upd-bar';
+    setBar('5%');
+    setPips(-1);
+    elStageLabel.textContent = 'Starting…';
+    document.getElementById('upd-title').textContent = 'Updating…';
+    document.body.style.overflow = 'hidden';
+
+    /* Open SSE stream */
+    if (_source) { _source.close(); }
+    _source = new EventSource('{{ url_for("update_stream") }}');
+
+    /* Default message → log line */
+    _source.addEventListener('message', function (e) {
+      appendLog(e.data);
+    });
+
+    /* Stage advance */
+    _source.addEventListener('stage', function (e) {
+      var s = STAGES[e.data];
+      if (!s) { return; }
+      setBar(s.pct);
+      setPips(parseInt(e.data, 10) - 1);
+      elStageLabel.textContent = s.label;
+    });
+
+    /* Success */
+    _source.addEventListener('success', function () {
+      _source.close();
+      setBar('100%', 'complete');
+      setPips(4);
+      elStageLabel.textContent = 'Complete';
+      document.getElementById('upd-title').textContent = 'Update complete';
+      showResult('✓ Update complete — both services are restarting. This page will refresh in 8 seconds.', true);
+      setTimeout(function () { location.reload(); }, 8000);
+    });
+
+    /* Already up to date */
+    _source.addEventListener('uptodate', function () {
+      _source.close();
+      setBar('100%', 'complete');
+      setPips(4);
+      elStageLabel.textContent = 'Up to date';
+      document.getElementById('upd-title').textContent = 'Already up to date';
+      showResult('✓ Nothing to update — already on the latest version.', true);
+      elCloseRow.hidden = false;
+    });
+
+    /* Failure */
+    _source.addEventListener('fail', function () {
+      _source.close();
+      elBar.className = 'upd-bar err';
+      setPips(elPips.filter(function(p){ return p.classList.contains('complete') || p.classList.contains('active'); }).length - 1, 'err');
+      elStageLabel.textContent = 'Failed';
+      document.getElementById('upd-title').textContent = 'Update failed';
+      showResult('✗ Update failed — see the log above for details.', false);
+      elCloseRow.hidden = false;
+    });
+
+    /* SSE transport error (e.g. server restarted mid-stream) */
+    _source.onerror = function () {
+      if (!_source || _source.readyState === EventSource.CLOSED) { return; }
+      _source.close();
+      /* If we already completed, treat the connection drop as expected */
+      if (elBar.classList.contains('complete')) { return; }
+      appendLog('Connection lost — the service may be restarting.', true);
+      elStageLabel.textContent = 'Connection lost';
+      showResult('Connection to the web UI was lost. If an update was in progress, wait a moment then refresh.', false);
+      elCloseRow.hidden = false;
+    };
+  };
+
+  /* Close ------------------------------------------------------------ */
+  window.closeUpdateModal = function () {
+    if (_source) { _source.close(); _source = null; }
+    elModal.hidden = true;
+    document.body.style.overflow = '';
+  };
+})();
 </script>
 {% endblock %}

@@ -508,8 +508,117 @@ def config_save():  # type: ignore[no-untyped-def]
 
 
 # ---------------------------------------------------------------------------
+# Update helpers
+# ---------------------------------------------------------------------------
+
+def _sse(data: str = "", event: str = "") -> str:
+    """Format a single Server-Sent Event message."""
+    msg = ""
+    if event:
+        msg += f"event: {event}\n"
+    msg += f"data: {data}\n\n"
+    return msg
+
+
+# ---------------------------------------------------------------------------
 # Update routes
 # ---------------------------------------------------------------------------
+
+@app.route("/update/stream")
+@login_required
+def update_stream():  # type: ignore[no-untyped-def]
+    """
+    Server-Sent Events endpoint that runs the full update sequence and streams
+    progress to the browser:
+      1. git fetch + report pending commits
+      2. git pull --ff-only origin main
+      3. scripts/install.sh  (run with sudo -n; output is streamed live)
+      4. Restart both services
+    """
+    def generate():  # type: ignore[no-untyped-def]
+        # --- Stage 1: fetch ---
+        yield _sse("Checking for updates…")
+        yield _sse("1", event="stage")
+
+        fetch_ok, pending, err = _fetch_pending_commits()
+        if not fetch_ok:
+            yield _sse(f"Error reaching GitHub: {err}")
+            yield _sse(event="fail")
+            return
+
+        count = len(pending)
+        if count:
+            yield _sse(f"Found {count} new commit{'s' if count != 1 else ''}.")
+            for c in pending[:5]:
+                yield _sse(f"  • {c}")
+            if count > 5:
+                yield _sse(f"  … and {count - 5} more")
+        else:
+            yield _sse("No new commits found via fetch.")
+
+        # --- Stage 2: pull ---
+        yield _sse("Pulling latest code…")
+        yield _sse("2", event="stage")
+
+        pull_ok, pull_msg = _do_git_pull()
+        yield _sse(pull_msg)
+        if not pull_ok:
+            yield _sse(event="fail")
+            return
+
+        if count == 0 and "already up to date" in pull_msg.lower():
+            yield _sse(event="uptodate")
+            return
+
+        # --- Stage 3: install script ---
+        yield _sse("Running install script…")
+        yield _sse("3", event="stage")
+
+        install_sh = _ROOT / "scripts" / "install.sh"
+        try:
+            proc = subprocess.Popen(
+                ["sudo", "-n", "bash", str(install_sh)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                cwd=str(_ROOT),
+                env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"},
+            )
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                stripped = line.rstrip("\n")
+                if stripped:
+                    yield _sse(stripped)
+            proc.wait()
+            if proc.returncode != 0:
+                yield _sse(f"Install script exited with code {proc.returncode}.")
+                # Fall back to pip-only install so new Python deps are covered
+                yield _sse("Falling back to pip install…")
+                pip_ok, pip_msg = _pip_install()
+                yield _sse(pip_msg)
+        except Exception as exc:
+            yield _sse(f"Install script error: {exc}")
+            yield _sse("Falling back to pip install…")
+            pip_ok, pip_msg = _pip_install()
+            yield _sse(pip_msg)
+
+        # --- Stage 4: restart ---
+        yield _sse("Restarting services…")
+        yield _sse("4", event="stage")
+
+        ok, msg = _restart_service()
+        yield _sse(msg)
+        _schedule_restart(_WEBUI_SERVICE, delay_secs=3.0)
+        yield _sse("Web UI restarting in 3 seconds…")
+
+        yield _sse(event="success")
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
 
 @app.route("/update/check")
 @login_required
