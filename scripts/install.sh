@@ -1,7 +1,8 @@
 #!/bin/bash
 set -e
 
-APP_DIR="${APP_DIR:-$HOME/dumb-smart-display}"
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="${APP_DIR:-$(realpath "${_SCRIPT_DIR}/..")}"
 APP_USER="${APP_USER:-$(whoami)}"
 SERVICE_NAME="dumb-smart-display.service"
 SERVICE_PATH="/etc/systemd/system/${SERVICE_NAME}"
