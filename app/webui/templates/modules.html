@@ -1,0 +1,608 @@
+{% extends "base.html" %}
+
+{% block title %}Modules — Dumb Smart Display{% endblock %}
+
+{% block content %}
+
+{# ------------------------------------------------------------------ #}
+{# Styles                                                               #}
+{# ------------------------------------------------------------------ #}
+<style>
+/* ---- Module list --------------------------------------------------- */
+#module-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.module-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px 12px 10px;
+  cursor: default;
+  transition: box-shadow .15s, opacity .2s;
+  user-select: none;
+}
+.module-item.dragging {
+  opacity: .45;
+  box-shadow: 0 4px 16px rgba(0,0,0,.18);
+}
+.module-item.drag-over {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.module-item.disabled-item {
+  opacity: .45;
+}
+
+/* Grip handle */
+.drag-handle {
+  cursor: grab;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+.drag-handle:active { cursor: grabbing; }
+
+/* Position badge */
+.position-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  min-width: 24px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Module info */
+.module-info {
+  flex: 1;
+  min-width: 0;
+}
+.module-info strong {
+  font-size: 14px;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.module-info span {
+  font-size: 12px;
+  color: var(--muted);
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Disabled label */
+.disabled-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  flex-shrink: 0;
+}
+
+/* Toggle */
+.module-item .switch { flex-shrink: 0; }
+
+/* ---- CSS Screen Mockups ------------------------------------------- */
+.mockup-frame {
+  width: 160px;
+  height: 96px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+  font-family: monospace;
+}
+
+/* Shared mockup primitives */
+.m-pill {
+  background: #000;
+  height: 20px;
+  border-radius: 3px;
+  margin: 3px 3px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.m-pill span { color: #fff; font-size: 6.5px; font-weight: 700; letter-spacing: .02em; }
+
+.m-line {
+  height: 4px;
+  background: #000;
+  border-radius: 2px;
+  margin: 0 6px 4px;
+}
+.m-line.full  { }
+.m-line.med   { width: 65%; }
+.m-line.short { width: 40%; }
+.m-line.xshort{ width: 25%; }
+.m-line.center { margin-left: auto; margin-right: auto; }
+
+.m-cols { display: flex; gap: 3px; margin: 0 3px; flex: 1; }
+.m-col  { flex: 1; display: flex; flex-direction: column; }
+.m-col-hdr {
+  height: 3px; background: #000; border-radius: 1px;
+  margin: 0 2px 4px;
+}
+
+.m-box {
+  border: 1px solid #000;
+  border-radius: 2px;
+  height: 13px;
+  margin: 0 2px 3px;
+  display: flex;
+  align-items: center;
+  padding: 0 3px;
+  font-size: 6px;
+  font-weight: 700;
+  color: #000;
+  flex-shrink: 0;
+}
+
+.m-body {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  flex: 1;
+}
+
+/* Big number (countdown) */
+.m-big-num {
+  font-size: 28px;
+  font-weight: 900;
+  line-height: 1;
+  color: #000;
+  text-align: center;
+  margin: 4px 0 0;
+}
+.m-big-label {
+  font-size: 7px;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: .1em;
+  color: #000;
+  margin-top: 1px;
+}
+
+/* Progress bar (spotify) */
+.m-progress-track {
+  height: 4px;
+  background: #ddd;
+  border-radius: 2px;
+  margin: 4px 6px 0;
+}
+.m-progress-fill {
+  height: 100%;
+  width: 38%;
+  background: #000;
+  border-radius: 2px;
+}
+
+/* Clock special layout */
+.m-clock-wrap {
+  display: flex;
+  height: 100%;
+}
+.m-clock-left {
+  width: 44px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #ddd;
+  padding: 5px 4px;
+  gap: 3px;
+}
+.m-clock-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+.m-clock-time {
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1;
+  color: #000;
+  letter-spacing: -1px;
+}
+.m-clock-date {
+  font-size: 7px;
+  font-weight: 600;
+  color: #555;
+  margin-top: 2px;
+}
+.m-weather-icon {
+  font-size: 16px;
+  line-height: 1;
+  text-align: center;
+}
+.m-temp {
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
+}
+.m-loc {
+  font-size: 5.5px;
+  color: #555;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Mealie big name block */
+.m-recipe-name {
+  height: 18px;
+  background: #000;
+  border-radius: 3px;
+  margin: 0 6px 5px;
+  opacity: .12;
+}
+.m-recipe-tag {
+  height: 9px;
+  background: #000;
+  border-radius: 8px;
+  margin: 0 auto;
+  width: 55px;
+  opacity: .18;
+}
+
+/* Weather forecast 7-col layout */
+.m-wx-cols {
+  display: flex;
+  height: 100%;
+  gap: 1px;
+  padding: 0 2px;
+}
+.m-wx-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2px 0;
+  gap: 2px;
+  border-right: 1px solid #eee;
+}
+.m-wx-col:last-child { border-right: none; }
+.m-wx-day  { font-size: 5.5px; font-weight: 700; color: #000; }
+.m-wx-icon { font-size: 11px; line-height: 1; }
+.m-wx-hi   { font-size: 5.5px; font-weight: 700; color: #000; }
+.m-wx-lo   { font-size: 5px;   color: #888; }
+
+/* ---- Save bar ----------------------------------------------------- */
+.save-bar {
+  position: sticky;
+  bottom: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 99;
+}
+.save-note {
+  font-size: 13px;
+  color: var(--muted);
+}
+</style>
+
+{# ------------------------------------------------------------------ #}
+{# Intro card                                                            #}
+{# ------------------------------------------------------------------ #}
+<div class="card">
+  <div class="card-header">
+    <h2>Module Order</h2>
+    <span style="font-size:12px; color:var(--muted);">Drag to reorder · toggle to enable or disable</span>
+  </div>
+  <div class="card-body" style="padding-bottom:12px;">
+    <p style="font-size:13px; color:var(--muted); margin:0;">
+      Enabled modules cycle on the display in the order shown. Disabled modules are stored
+      but not shown. Drag the <strong>⠿</strong> handle to reorder, then click
+      <strong>Save &amp; Restart</strong>.
+    </p>
+  </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# Drag-and-drop list                                                    #}
+{# ------------------------------------------------------------------ #}
+<div class="card">
+  <div class="card-body" style="padding: 12px;">
+    <div id="module-list">
+      {% for mod in full_order %}
+      {% set schema = module_schemas[mod] %}
+      {% set is_enabled = mod in enabled_set %}
+      <div class="module-item {% if not is_enabled %}disabled-item{% endif %}"
+           draggable="true"
+           data-module="{{ mod }}"
+           id="item-{{ mod }}">
+
+        {# Grip #}
+        <span class="drag-handle" title="Drag to reorder">⠿</span>
+
+        {# Screen mockup #}
+        <div class="mockup-frame">
+          {% if mod == 'clock' %}
+          {# Clock: custom two-column layout, no pill #}
+          <div class="m-clock-wrap">
+            <div class="m-clock-left">
+              <div class="m-weather-icon">⛅</div>
+              <div class="m-temp">72°F</div>
+              <div style="height:3px;background:#ddd;border-radius:2px;margin:1px 0;"></div>
+              <div class="m-loc">Home</div>
+              <div style="height:3px;background:#eee;border-radius:2px;margin:1px 0;"></div>
+              <div class="m-line short" style="margin:0 2px;height:3px;"></div>
+              <div class="m-line xshort" style="margin:2px 2px 0;height:3px;"></div>
+            </div>
+            <div class="m-clock-right">
+              <div class="m-clock-time">9:41</div>
+              <div class="m-clock-date">Wednesday, Oct 4</div>
+            </div>
+          </div>
+
+          {% elif mod == 'mealie_today' %}
+          {# Mealie: pill + large name block + tag chip #}
+          <div class="m-pill"><span>Tonight's Dinner</span></div>
+          <div class="m-body">
+            <div class="m-recipe-name"></div>
+            <div class="m-recipe-name" style="margin-top:0;height:12px;"></div>
+            <div style="margin-top:4px; display:flex; justify-content:center;">
+              <div class="m-recipe-tag"></div>
+            </div>
+          </div>
+
+          {% elif mod == 'ticktick' %}
+          {# TickTick: pill + two columns with task lines #}
+          <div class="m-pill"><span>Tasks</span></div>
+          <div class="m-cols">
+            <div class="m-col">
+              <div class="m-line short" style="margin-bottom:3px;height:3px;"></div>
+              <div class="m-col-hdr"></div>
+              <div class="m-line full"></div>
+              <div class="m-line med"></div>
+              <div class="m-line full"></div>
+              <div class="m-line short"></div>
+            </div>
+            <div style="width:1px;background:#ddd;flex-shrink:0;"></div>
+            <div class="m-col">
+              <div class="m-line short" style="margin-bottom:3px;height:3px;"></div>
+              <div class="m-col-hdr"></div>
+              <div class="m-line full"></div>
+              <div class="m-line full"></div>
+              <div class="m-line med"></div>
+              <div class="m-line short"></div>
+            </div>
+          </div>
+
+          {% elif mod == 'calendar_ics' %}
+          {# Calendar: pill + two columns with event lines #}
+          <div class="m-pill"><span>Calendar</span></div>
+          <div class="m-cols">
+            <div class="m-col">
+              <div class="m-line short" style="margin-bottom:3px;height:3px;"></div>
+              <div class="m-col-hdr"></div>
+              <div class="m-line full"></div>
+              <div class="m-line med"></div>
+              <div class="m-line full"></div>
+            </div>
+            <div style="width:1px;background:#ddd;flex-shrink:0;"></div>
+            <div class="m-col">
+              <div class="m-line short" style="margin-bottom:3px;height:3px;"></div>
+              <div class="m-col-hdr"></div>
+              <div class="m-line med"></div>
+              <div class="m-line full"></div>
+              <div class="m-line short"></div>
+            </div>
+          </div>
+
+          {% elif mod == 'rss_feed' %}
+          {# RSS: pill + stacked headline lines #}
+          <div class="m-pill"><span>RSS Feed</span></div>
+          <div class="m-body" style="padding:0 0 4px;">
+            <div class="m-line full"></div>
+            <div class="m-line med"></div>
+            <div class="m-line full"></div>
+            <div class="m-line short"></div>
+            <div class="m-line full"></div>
+            <div class="m-line med"></div>
+          </div>
+
+          {% elif mod == 'countdown' %}
+          {# Countdown: pill + big number + label #}
+          <div class="m-pill"><span>Event Name</span></div>
+          <div class="m-body" style="align-items:center;justify-content:center;flex:1;">
+            <div class="m-big-num">42</div>
+            <div class="m-big-label">DAYS</div>
+          </div>
+
+          {% elif mod == 'spotify_now_playing' %}
+          {# Spotify: pill + track + artist + progress bar #}
+          <div class="m-pill"><span>Now Playing</span></div>
+          <div class="m-body" style="padding:2px 0 0;">
+            <div class="m-line med center" style="margin:0 auto 5px; height:6px; border-radius:3px;"></div>
+            <div class="m-line short center" style="margin:0 auto 0;"></div>
+            <div class="m-progress-track">
+              <div class="m-progress-fill"></div>
+            </div>
+          </div>
+
+          {% elif mod == 'system_status' %}
+          {# System Status: pill + 2×2 box grid #}
+          <div class="m-pill"><span>System Status</span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:3px 3px 2px;">
+            <div class="m-box">CPU</div>
+            <div class="m-box">RAM</div>
+            <div class="m-box">DISK</div>
+            <div class="m-box">UP</div>
+          </div>
+
+          {% elif mod == 'weather_forecast' %}
+          {# 7-Day Forecast: pill + 7-column layout #}
+          <div class="m-pill"><span>7 Day Forecast</span></div>
+          <div class="m-wx-cols">
+            {% for day in ['M','T','W','T','F','S','S'] %}
+            <div class="m-wx-col">
+              <div class="m-wx-day">{{ day }}</div>
+              <div class="m-wx-icon">{% if loop.index in [1,3,5] %}☀{% elif loop.index in [2,4] %}⛅{% else %}🌧{% endif %}</div>
+              <div class="m-wx-hi">78°</div>
+              <div class="m-wx-lo">61°</div>
+            </div>
+            {% endfor %}
+          </div>
+
+          {% else %}
+          {# Generic fallback #}
+          <div class="m-pill"><span>{{ schema.label }}</span></div>
+          <div class="m-body">
+            <div class="m-line full"></div>
+            <div class="m-line med"></div>
+            <div class="m-line short"></div>
+          </div>
+          {% endif %}
+        </div>{# .mockup-frame #}
+
+        {# Module info #}
+        <div class="module-info">
+          <strong>{{ schema.label }}</strong>
+          <span>{{ schema.description }}</span>
+        </div>
+
+        {# Position badge #}
+        <span class="position-badge">#{{ loop.index }}</span>
+
+        {# Enable toggle #}
+        <label class="switch" title="Enable / disable">
+          <input type="checkbox"
+                 id="tog_{{ mod }}"
+                 name="module_enabled__{{ mod }}"
+                 {% if is_enabled %}checked{% endif %}
+                 onchange="onToggle('{{ mod }}', this.checked)">
+          <span class="slider"></span>
+        </label>
+
+      </div>{# .module-item #}
+      {% endfor %}
+    </div>{# #module-list #}
+  </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# Sticky save bar                                                       #}
+{# ------------------------------------------------------------------ #}
+<div class="save-bar">
+  <span class="save-note">Saving will restart the display service.</span>
+  <button type="submit" form="modules-form" class="btn-primary">Save &amp; Restart</button>
+</div>
+
+{# Hidden form — inputs are injected by JS on submit #}
+<form id="modules-form" method="POST" action="{{ url_for('modules_save') }}"></form>
+
+{# ------------------------------------------------------------------ #}
+{# Drag-and-drop + toggle JavaScript                                    #}
+{# ------------------------------------------------------------------ #}
+<script>
+(function () {
+  var list    = document.getElementById('module-list');
+  var dragged = null;
+  var dragSrc = null;
+
+  /* ---- Drag-and-drop ---- */
+  list.addEventListener('dragstart', function (e) {
+    dragged = e.target.closest('.module-item');
+    if (!dragged) return;
+    dragSrc = dragged;
+    // Delay so the ghost image captures the undimmed state
+    setTimeout(function () { dragged.classList.add('dragging'); }, 0);
+  });
+
+  list.addEventListener('dragend', function () {
+    if (dragged) dragged.classList.remove('dragging');
+    list.querySelectorAll('.module-item').forEach(function (el) {
+      el.classList.remove('drag-over');
+    });
+    dragged = null;
+    dragSrc = null;
+    updatePositions();
+  });
+
+  list.addEventListener('dragover', function (e) {
+    e.preventDefault();
+    var target = e.target.closest('.module-item');
+    if (!target || target === dragged) return;
+    list.querySelectorAll('.module-item').forEach(function (el) {
+      el.classList.remove('drag-over');
+    });
+    target.classList.add('drag-over');
+    var rect  = target.getBoundingClientRect();
+    var after = e.clientY > rect.top + rect.height / 2;
+    list.insertBefore(dragged, after ? target.nextSibling : target);
+  });
+
+  /* ---- Position badge update ---- */
+  function updatePositions() {
+    list.querySelectorAll('.module-item').forEach(function (item, i) {
+      item.querySelector('.position-badge').textContent = '#' + (i + 1);
+    });
+  }
+
+  /* ---- Enable/disable toggle ---- */
+  window.onToggle = function (mod, enabled) {
+    var item = document.getElementById('item-' + mod);
+    if (item) {
+      item.classList.toggle('disabled-item', !enabled);
+    }
+  };
+
+  /* ---- Form submit: inject hidden module_order inputs ---- */
+  document.getElementById('modules-form').addEventListener('submit', function (e) {
+    var form = e.target;
+    // Remove any previously injected order inputs (in case of double-submit)
+    form.querySelectorAll('input[name="module_order"]').forEach(function (el) {
+      el.remove();
+    });
+    // Also move the toggle checkboxes into the form
+    form.querySelectorAll('input[name^="module_enabled__"]').forEach(function (el) {
+      el.remove();
+    });
+
+    list.querySelectorAll('.module-item').forEach(function (item) {
+      // Hidden order input
+      var orderInput = document.createElement('input');
+      orderInput.type  = 'hidden';
+      orderInput.name  = 'module_order';
+      orderInput.value = item.dataset.module;
+      form.appendChild(orderInput);
+
+      // Enabled checkbox (only submit when checked — standard checkbox behavior)
+      var cb = document.getElementById('tog_' + item.dataset.module);
+      if (cb && cb.checked) {
+        var enabledInput = document.createElement('input');
+        enabledInput.type  = 'hidden';
+        enabledInput.name  = 'module_enabled__' + item.dataset.module;
+        enabledInput.value = '1';
+        form.appendChild(enabledInput);
+      }
+    });
+  });
+})();
+</script>
+
+{% endblock %}

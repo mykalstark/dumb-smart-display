@@ -71,6 +71,11 @@
 
     header .brand svg { opacity: .85; }
 
+    header nav {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
     header nav a {
       color: rgba(255,255,255,.7);
       text-decoration: none;
@@ -480,6 +485,8 @@
     Dumb Smart Display
   </a>
   <nav>
+    <a href="{{ url_for('config_page') }}">Settings</a>
+    <a href="{{ url_for('modules_page') }}">Modules</a>
     {% if auth_required %}
     <a href="{{ url_for('logout') }}">Sign out</a>
     {% endif %}

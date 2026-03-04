@@ -550,6 +550,18 @@ def config_save():  # type: ignore[no-untyped-def]
     # Merge new values on top of the existing user config so that keys we
     # didn't render (e.g. hardware pin assignments) are preserved.
     existing_user = _load_user_config()
+
+    # Preserve the custom module order set on the Modules page.
+    # _parse_form rebuilds enabled from MODULE_ORDER iteration; we fix that here
+    # so toggling modules on the Settings page never resets the drag order.
+    existing_enabled = existing_user.get("modules", {}).get("enabled") or []
+    new_enabled_set  = set(new_cfg.get("modules", {}).get("enabled") or [])
+    preserved = [n for n in existing_enabled if n in new_enabled_set]
+    for n in MODULE_ORDER:
+        if n in new_enabled_set and n not in preserved:
+            preserved.append(n)
+    new_cfg.setdefault("modules", {})["enabled"] = preserved
+
     merged_new = _deep_merge(existing_user, new_cfg)
 
     try:
@@ -569,6 +581,50 @@ def config_save():  # type: ignore[no-untyped-def]
         )
 
     return redirect(url_for("config_page"))
+
+
+# ---------------------------------------------------------------------------
+# Module order routes
+# ---------------------------------------------------------------------------
+
+@app.route("/modules")
+@login_required
+def modules_page():  # type: ignore[no-untyped-def]
+    cfg = _load_merged_config()
+    enabled_list = [n for n in (cfg.get("modules", {}).get("enabled") or [])
+                    if n in set(MODULE_ORDER)]
+    enabled_set  = set(enabled_list)
+    disabled     = [n for n in MODULE_ORDER if n not in enabled_set]
+    full_order   = enabled_list + disabled   # enabled first (in order), then disabled
+    return render_template(
+        "modules.html",
+        full_order=full_order,
+        enabled_set=enabled_set,
+        module_schemas=MODULE_SCHEMAS,
+        auth_required=_auth_required(),
+    )
+
+
+@app.route("/modules", methods=["POST"])
+@login_required
+def modules_save():  # type: ignore[no-untyped-def]
+    ordered     = request.form.getlist("module_order")   # names in drag order
+    enabled_set = {n for n in MODULE_ORDER if request.form.get(f"module_enabled__{n}")}
+    # Build new enabled list: ordered names that are enabled
+    new_enabled = [n for n in ordered if n in enabled_set]
+    # Safety: add any enabled modules missing from the dragged list
+    for n in MODULE_ORDER:
+        if n in enabled_set and n not in new_enabled:
+            new_enabled.append(n)
+    user_cfg = _load_user_config()
+    user_cfg.setdefault("modules", {})["enabled"] = new_enabled
+    _write_user_config(user_cfg)
+    ok, msg = _restart_service()
+    flash(
+        "Module order saved. Display service restarting." if ok else f"Saved. Note: {msg}",
+        "success" if ok else "warning",
+    )
+    return redirect(url_for("modules_page"))
 
 
 # ---------------------------------------------------------------------------
