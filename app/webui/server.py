@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 from flask import (
     Flask,
+    Response,
     flash,
     redirect,
     render_template,
@@ -169,7 +170,7 @@ def _fetch_pending_commits() -> Tuple[bool, List[str], str]:
             return False, [], err
 
         log = subprocess.run(
-            ["git", "log", "HEAD..origin/HEAD", "--oneline"],
+            ["git", "log", "HEAD..origin/main", "--oneline"],
             capture_output=True, text=True, timeout=10, cwd=str(_ROOT),
         )
         pending = [ln for ln in log.stdout.strip().splitlines() if ln]
@@ -181,10 +182,10 @@ def _fetch_pending_commits() -> Tuple[bool, List[str], str]:
 
 
 def _do_git_pull() -> Tuple[bool, str]:
-    """Run ``git pull --ff-only``. Returns ``(success, message)``."""
+    """Run ``git pull --ff-only origin main``. Returns ``(success, message)``."""
     try:
         result = subprocess.run(
-            ["git", "pull", "--ff-only"],
+            ["git", "pull", "--ff-only", "origin", "main"],
             capture_output=True, text=True, timeout=60, cwd=str(_ROOT),
         )
         if result.returncode == 0:
@@ -540,23 +541,27 @@ def do_update():  # type: ignore[no-untyped-def]
     restart both services.  The web UI service restart is delayed slightly so
     the redirect response reaches the browser before the process is killed.
     """
-    # 1. Fetch and check for pending commits.
+    # 1. Fetch and collect pending commits (for the summary message only).
     fetch_ok, pending, err = _fetch_pending_commits()
 
     if not fetch_ok:
         flash(f"Update failed — could not reach GitHub: {err}", "error")
         return redirect(url_for("config_page"))
 
-    if not pending:
-        flash("Already up to date — nothing to pull.", "success")
-        return redirect(url_for("config_page"))
-
     count = len(pending)
 
-    # 2. Pull.
+    # 2. Pull regardless of whether the pending list is empty — the fetch may
+    #    have missed commits if origin/HEAD was stale, and git pull is safe
+    #    when already up to date.
     pull_ok, pull_msg = _do_git_pull()
     if not pull_ok:
         flash(f"git pull failed: {pull_msg}", "error")
+        return redirect(url_for("config_page"))
+
+    # If pull reports already up to date and we saw no pending commits, skip
+    # the service restart — nothing changed.
+    if count == 0 and "already up to date" in pull_msg.lower():
+        flash("Already up to date — nothing to pull.", "success")
         return redirect(url_for("config_page"))
 
     # 3. Reinstall dependencies (handles new packages added by the update).
