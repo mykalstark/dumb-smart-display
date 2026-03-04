@@ -116,6 +116,33 @@
     {% endif %}
   </div>
 
+  {% elif field.type == 'time_of_day' %}
+  {#
+    Composite time widget: hour + minute + optional AM/PM.
+    A hidden input (name="{{ fname }}") holds the HH:MM value that is actually
+    submitted. The visible inputs have no name so they are excluded from the form
+    payload. JavaScript wires them together and keeps the hidden field in sync.
+  #}
+  <div class="field tod-field">
+    <label>{{ field.label }}</label>
+    <input type="hidden" id="{{ fid }}" name="{{ fname }}"
+           value="{{ value if value is not none else '18:30' }}" />
+    <div class="tod-row">
+      <input type="number" class="tod-hour" placeholder="6"
+             style="width:58px;text-align:center;" />
+      <span class="tod-colon">:</span>
+      <input type="number" class="tod-min" min="0" max="59" step="1" placeholder="00"
+             style="width:58px;text-align:center;" />
+      <select class="tod-ampm">
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
+      </select>
+    </div>
+    {% if field.help is defined %}
+    <span class="help-text">{{ field.help }}</span>
+    {% endif %}
+  </div>
+
   {% else %}{# text / url / default #}
   <div class="field {% if field.key == 'ics_url' or field.key == 'feed_url' or field.key == 'base_url' %}full-width{% endif %}">
     <label for="{{ fid }}">
@@ -396,6 +423,134 @@ function togglePw(id, btn) {
   if (inp.type === 'password') { inp.type = 'text'; btn.textContent = 'Hide'; }
   else { inp.type = 'password'; btn.textContent = 'Show'; }
 }
+</script>
+
+{# ------------------------------------------------------------------ #}
+{# Time-of-day widget — styles                                          #}
+{# ------------------------------------------------------------------ #}
+<style>
+.tod-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.tod-colon {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--fg);
+  line-height: 1;
+  user-select: none;
+}
+.tod-hour, .tod-min {
+  /* Inherit input styling from base.css; just constrain width */
+  width: 58px !important;
+  text-align: center;
+  padding: 6px 4px !important;
+}
+/* Hide spinner arrows in tod numeric inputs */
+.tod-hour::-webkit-inner-spin-button,
+.tod-hour::-webkit-outer-spin-button,
+.tod-min::-webkit-inner-spin-button,
+.tod-min::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.tod-hour, .tod-min { -moz-appearance: textfield; }
+.tod-ampm {
+  padding: 6px 4px;
+}
+</style>
+
+{# ------------------------------------------------------------------ #}
+{# Time-of-day widget — JavaScript                                      #}
+{# ------------------------------------------------------------------ #}
+<script>
+(function () {
+  /* Read the current global time format from the Location selector */
+  function getFmt() {
+    var el = document.getElementById('location__time_format');
+    return el ? el.value : '24h';
+  }
+
+  /* Parse a stored "HH:MM" string into { h, m } integers */
+  function parseHHMM(str) {
+    var parts = (str || '18:30').split(':');
+    return { h: parseInt(parts[0], 10) || 0, m: parseInt(parts[1], 10) || 0 };
+  }
+
+  /*
+   * todInit — populate the visible hour/min/ampm inputs from the hidden HH:MM
+   * field and show/hide the AM/PM selector based on the current format.
+   */
+  function todInit(wrap) {
+    var hidden = wrap.querySelector('input[type="hidden"]');
+    var hourEl = wrap.querySelector('.tod-hour');
+    var minEl  = wrap.querySelector('.tod-min');
+    var ampmEl = wrap.querySelector('.tod-ampm');
+    if (!hidden || !hourEl || !minEl || !ampmEl) { return; }
+
+    var fmt = getFmt();
+    var t   = parseHHMM(hidden.value);
+
+    if (fmt === '12h') {
+      hourEl.min = 1; hourEl.max = 12;
+      hourEl.value = t.h % 12 || 12;
+      ampmEl.value = t.h >= 12 ? 'PM' : 'AM';
+      ampmEl.style.display = '';
+    } else {
+      hourEl.min = 0; hourEl.max = 23;
+      hourEl.value = t.h;
+      ampmEl.style.display = 'none';
+    }
+    minEl.value = String(t.m).padStart(2, '0');
+  }
+
+  /*
+   * todSync — write the current hour/min/ampm inputs back to the hidden HH:MM
+   * field so the correct value is submitted with the form.
+   */
+  function todSync(wrap) {
+    var hidden = wrap.querySelector('input[type="hidden"]');
+    var hourEl = wrap.querySelector('.tod-hour');
+    var minEl  = wrap.querySelector('.tod-min');
+    var ampmEl = wrap.querySelector('.tod-ampm');
+    if (!hidden || !hourEl || !minEl || !ampmEl) { return; }
+
+    var fmt = getFmt();
+    var h = parseInt(hourEl.value, 10) || 0;
+    var m = Math.min(59, Math.max(0, parseInt(minEl.value, 10) || 0));
+
+    if (fmt === '12h') {
+      if (ampmEl.value === 'PM' && h !== 12) { h += 12; }
+      if (ampmEl.value === 'AM' && h === 12) { h = 0; }
+    }
+    h = Math.min(23, Math.max(0, h));
+    hidden.value = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+  }
+
+  /* Wire up every tod-field on the page */
+  document.querySelectorAll('.tod-field').forEach(function (wrap) {
+    todInit(wrap);
+    ['tod-hour', 'tod-min', 'tod-ampm'].forEach(function (cls) {
+      var el = wrap.querySelector('.' + cls);
+      if (el) {
+        el.addEventListener('change', function () { todSync(wrap); });
+        el.addEventListener('input',  function () { todSync(wrap); });
+      }
+    });
+  });
+
+  /* Re-initialize all tod-fields whenever the global Time Format selector changes */
+  var fmtSel = document.getElementById('location__time_format');
+  if (fmtSel) {
+    fmtSel.addEventListener('change', function () {
+      /* Sync first so the hidden value is fresh before re-display */
+      document.querySelectorAll('.tod-field').forEach(function (w) { todSync(w); });
+      document.querySelectorAll('.tod-field').forEach(todInit);
+    });
+  }
+})();
 </script>
 
 {# ------------------------------------------------------------------ #}

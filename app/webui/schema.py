@@ -205,9 +205,8 @@ MODULE_SCHEMAS: Dict[str, SectionSchema] = {
             {
                 "key": "target_eat_time",
                 "label": "Target Dinner Time",
-                "type": "text",
-                "placeholder": "18:30",
-                "help": "When dinner should be ready (HH:MM). Used to calculate suggested start time.",
+                "type": "time_of_day",
+                "help": "When dinner should be ready. Follows the global Time Format setting.",
             },
             {
                 "key": "refresh_seconds",
