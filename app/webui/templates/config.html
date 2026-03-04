@@ -166,12 +166,13 @@
 
     <h3 class="upd-title" id="upd-title">Updating…</h3>
 
-    {# Four-stage progress bar #}
+    {# Five-stage progress bar #}
     <div class="upd-stages">
       <div class="upd-stage-pip" id="upd-pip-1"></div>
       <div class="upd-stage-pip" id="upd-pip-2"></div>
       <div class="upd-stage-pip" id="upd-pip-3"></div>
       <div class="upd-stage-pip" id="upd-pip-4"></div>
+      <div class="upd-stage-pip" id="upd-pip-5"></div>
     </div>
     <div class="upd-track">
       <div class="upd-bar" id="upd-bar"></div>
@@ -515,10 +516,11 @@ function togglePw(id, btn) {
 
   /* Stage metadata -------------------------------------------------- */
   var STAGES = {
-    '1': { label: 'Checking for updates…', pct: '15%',  pip: 1 },
-    '2': { label: 'Pulling latest code…',  pct: '38%',  pip: 2 },
-    '3': { label: 'Running install script…', pct: '78%', pip: 3 },
-    '4': { label: 'Restarting services…', pct: '92%',  pip: 4 },
+    '1': { label: 'Checking for updates…',      pct: '12%', pip: 1 },
+    '2': { label: 'Pulling latest code…',        pct: '30%', pip: 2 },
+    '3': { label: 'Running install script…',     pct: '65%', pip: 3 },
+    '4': { label: 'Restarting display service…', pct: '82%', pip: 4 },
+    '5': { label: 'Restarting web UI service…',  pct: '94%', pip: 5 },
   };
 
   /* DOM refs (resolved on open) ------------------------------------- */
@@ -532,7 +534,7 @@ function togglePw(id, btn) {
     elLog        = document.getElementById('upd-log');
     elResult     = document.getElementById('upd-result');
     elCloseRow   = document.getElementById('upd-close-row');
-    elPips       = [1,2,3,4].map(function(n){ return document.getElementById('upd-pip-' + n); });
+    elPips       = [1,2,3,4,5].map(function(n){ return document.getElementById('upd-pip-' + n); });
   }
 
   /* Helpers --------------------------------------------------------- */
@@ -599,18 +601,18 @@ function togglePw(id, btn) {
     _source.addEventListener('success', function () {
       _source.close();
       setBar('100%', 'complete');
-      setPips(4);
+      setPips(5);
       elStageLabel.textContent = 'Complete';
       document.getElementById('upd-title').textContent = 'Update complete';
-      showResult('✓ Update complete — both services are restarting. This page will refresh in 8 seconds.', true);
-      setTimeout(function () { location.reload(); }, 8000);
+      showResult('✓ Update complete — both services are restarting. This page will refresh in 12 seconds.', true);
+      setTimeout(function () { location.reload(); }, 12000);
     });
 
     /* Already up to date */
     _source.addEventListener('uptodate', function () {
       _source.close();
       setBar('100%', 'complete');
-      setPips(4);
+      setPips(5);
       elStageLabel.textContent = 'Up to date';
       document.getElementById('upd-title').textContent = 'Already up to date';
       showResult('✓ Nothing to update — already on the latest version.', true);

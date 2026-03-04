@@ -533,7 +533,8 @@ def update_stream():  # type: ignore[no-untyped-def]
       1. git fetch + report pending commits
       2. git pull --ff-only origin main
       3. scripts/install.sh  (run with sudo -n; output is streamed live)
-      4. Restart both services
+      4. Restart display service
+      5. Restart web UI service (scheduled; page auto-reloads)
     """
     def generate():  # type: ignore[no-untyped-def]
         # --- Stage 1: fetch ---
@@ -602,14 +603,19 @@ def update_stream():  # type: ignore[no-untyped-def]
             pip_ok, pip_msg = _pip_install()
             yield _sse(pip_msg)
 
-        # --- Stage 4: restart ---
-        yield _sse("Restarting services…")
+        # --- Stage 4: restart display service ---
+        yield _sse("Restarting display service…")
         yield _sse("4", event="stage")
 
         ok, msg = _restart_service()
         yield _sse(msg)
+
+        # --- Stage 5: restart web UI service ---
+        yield _sse("Restarting web UI service…")
+        yield _sse("5", event="stage")
+
         _schedule_restart(_WEBUI_SERVICE, delay_secs=3.0)
-        yield _sse("Web UI restarting in 3 seconds…")
+        yield _sse("Web UI service restarting — this page will reload automatically.")
 
         yield _sse(event="success")
 
