@@ -145,11 +145,20 @@ def _restart_service() -> Tuple[bool, str]:
 # Git / update helpers
 # ---------------------------------------------------------------------------
 
+def _git(*args: str) -> List[str]:
+    """Build a git command with safe.directory set to _ROOT.
+
+    Avoids "dubious ownership" errors when the web UI service runs under a
+    different effective user than the repo owner (common with sudo/systemd).
+    """
+    return ["git", "-c", f"safe.directory={_ROOT}", *args]
+
+
 def _get_current_version() -> str:
     """Return a short human-readable string for the currently checked-out commit."""
     try:
         result = subprocess.run(
-            ["git", "log", "-1", "--format=%h — %s"],
+            _git("log", "-1", "--format=%h — %s"),
             capture_output=True, text=True, timeout=10, cwd=str(_ROOT),
         )
         return result.stdout.strip() if result.returncode == 0 else "unknown"
@@ -166,7 +175,7 @@ def _fetch_pending_commits() -> Tuple[bool, List[str], str]:
     """
     try:
         fetch = subprocess.run(
-            ["git", "fetch", "origin"],
+            _git("fetch", "origin"),
             capture_output=True, text=True, timeout=30, cwd=str(_ROOT),
         )
         if fetch.returncode != 0:
@@ -174,7 +183,7 @@ def _fetch_pending_commits() -> Tuple[bool, List[str], str]:
             return False, [], err
 
         log = subprocess.run(
-            ["git", "log", "HEAD..origin/main", "--oneline"],
+            _git("log", "HEAD..origin/main", "--oneline"),
             capture_output=True, text=True, timeout=10, cwd=str(_ROOT),
         )
         pending = [ln for ln in log.stdout.strip().splitlines() if ln]
@@ -189,7 +198,7 @@ def _do_git_pull() -> Tuple[bool, str]:
     """Run ``git pull --ff-only origin main``. Returns ``(success, message)``."""
     try:
         result = subprocess.run(
-            ["git", "pull", "--ff-only", "origin", "main"],
+            _git("pull", "--ff-only", "origin", "main"),
             capture_output=True, text=True, timeout=60, cwd=str(_ROOT),
         )
         if result.returncode == 0:
@@ -207,7 +216,7 @@ def _get_head_commit() -> str:
     """Return the current HEAD commit short hash, or empty string on failure."""
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
+            _git("rev-parse", "--short", "HEAD"),
             capture_output=True, text=True, timeout=5, cwd=str(_ROOT),
         )
         return result.stdout.strip() if result.returncode == 0 else ""
@@ -219,7 +228,7 @@ def _get_current_branch() -> str:
     """Return the currently checked-out branch name, or 'unknown' on failure."""
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            _git("rev-parse", "--abbrev-ref", "HEAD"),
             capture_output=True, text=True, timeout=5, cwd=str(_ROOT),
         )
         return result.stdout.strip() if result.returncode == 0 else "unknown"
@@ -678,7 +687,7 @@ def update_stream():  # type: ignore[no-untyped-def]
         if branch != "main":
             yield _sse(f"⚠ Warning: not on 'main' branch — switching to main…")
             chk = subprocess.run(
-                ["git", "checkout", "main"],
+                _git("checkout", "main"),
                 capture_output=True, text=True, timeout=10, cwd=str(_ROOT),
             )
             if chk.returncode != 0:
