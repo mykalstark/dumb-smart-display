@@ -20,6 +20,7 @@ class Module:
         self.api_token = config.get("api_token", "")
         self.refresh_seconds = config.get("refresh_seconds", 3600)
         self.target_eat_time = config.get("target_eat_time", "18:30")
+        self.time_format = config.get("time_format", "%I:%M %p")
 
         self.fonts = fonts
         self.last_fetch: Optional[datetime.datetime] = None
@@ -302,7 +303,7 @@ class Module:
         start_by = self._compute_start_time(self.meal_details.get("total"))
         target_time = self._parse_target_time()
         target_str = datetime.datetime.combine(datetime.date.today(), target_time)
-        target_label = target_str.strftime("%I:%M %p").lstrip("0")
+        target_label = self._format_clock(target_str)
 
         if start_by:
             banner_text = f"Start by {self._format_clock(start_by)} to eat by {target_label}"
@@ -413,7 +414,11 @@ class Module:
         return target_dt - datetime.timedelta(minutes=parsed_total)
 
     def _format_clock(self, dt_obj: datetime.datetime) -> str:
-        return dt_obj.strftime("%I:%M %p").lstrip("0")
+        result = dt_obj.strftime(self.time_format)
+        # Strip leading zero from hour only for 12-hour format (01:30 PM → 1:30 PM)
+        if self.time_format.startswith("%I"):
+            result = result.lstrip("0")
+        return result
 
     def _draw_title_card(self, draw: ImageDraw.Draw, box: Tuple[int, int, int, int], meal_text: str) -> int:
         x0, y0, x1, y1 = self._inset_box(box, 12)
@@ -555,7 +560,7 @@ class Module:
         start_by = self._compute_start_time(self.meal_details.get("total"))
         target_time = self._parse_target_time()
         target_str = datetime.datetime.combine(datetime.date.today(), target_time)
-        target_label = target_str.strftime("%I:%M %p").lstrip("0")
+        target_label = self._format_clock(target_str)
 
         if start_by:
             banner_text = f"Start by {self._format_clock(start_by)} to eat by {target_label}"

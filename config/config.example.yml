@@ -24,6 +24,7 @@ location:
   longitude: -112.321445
   temperature_unit: "fahrenheit"  # or "celsius"
   location_name: "Home"
+  time_format: "12h"              # "12h" (2:30 PM) or "24h" (14:30) — applies to all modules
 
 modules:
   enabled:
@@ -38,7 +39,6 @@ modules:
     # - weather_forecast
   settings:
     clock:
-      time_format: "%I:%M %p"  # 12-hour format (e.g. 02:30 PM)
       date_format: "%a %d"     # Short date (e.g. Fri 26)
       time_size: 120           # Even bigger time
       date_size: 50            # Bigger date
@@ -53,7 +53,6 @@ modules:
       target_eat_time: "18:30"                  # when dinner is expected to be ready
     ticktick:
       refresh_seconds: 900
-      time_format: "%H:%M"
       max_items_per_day: 6
       max_title_length: 60
       show_project_names: true
@@ -79,7 +78,6 @@ modules:
       # In Apple Calendar: Right-click calendar → "Share Calendar" → copy private link
       # Both webcal:// and https:// URLs are accepted.
       ics_url: "CHANGE_ME"
-      time_format: "%I:%M %p"   # or "%H:%M" for 24-hour
       max_events_per_day: 5
       refresh_seconds: 900      # Re-fetch every 15 minutes
 

@@ -28,6 +28,7 @@ class Module(BaseDisplayModule):
         self.client_secret: str = self.config.get("client_secret", "")
         self.refresh_token: str = self.config.get("refresh_token", "")
         self.refresh_seconds: int = int(self.config.get("refresh_seconds", 10))
+        self.time_format: str = self.config.get("time_format", "%H:%M")
 
         self._access_token: Optional[str] = None
         self._token_expiry: Optional[datetime] = None
@@ -236,7 +237,7 @@ class Module(BaseDisplayModule):
             draw.text(((width - mw) // 2, (height - mh) // 2 - 16), msg, font=msg_font, fill=0)
 
             if self._last_updated:
-                upd = f"Last checked {self._last_updated.strftime('%H:%M')}"
+                upd = f"Last checked {self._last_updated.strftime(self.time_format)}"
                 uw, uh = self._get_text_size(draw, upd, small_font)
                 draw.text(
                     ((width - uw) // 2, (height - mh) // 2 - 16 + mh + 12),
@@ -291,7 +292,7 @@ class Module(BaseDisplayModule):
 
         # Footer: last updated
         if self._last_updated:
-            upd = f"Updated {self._last_updated.strftime('%H:%M:%S')}"
+            upd = f"Updated {self._last_updated.strftime(self.time_format)}"
             uw, uh = self._get_text_size(draw, upd, small_font)
             draw.text(((width - uw) // 2, height - padding - uh), upd, font=small_font, fill=0)
 

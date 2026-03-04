@@ -116,6 +116,12 @@ def build_module_manager(config: Dict[str, Any], fonts: Dict[str, Any]) -> Modul
     if isinstance(location, dict):
         shared.update(location)
 
+    # Resolve shorthand time-format tokens to strftime strings so all modules
+    # receive a ready-to-use format string regardless of which token was stored.
+    _TIME_FORMATS: Dict[str, str] = {"12h": "%I:%M %p", "24h": "%H:%M"}
+    if "time_format" in shared:
+        shared["time_format"] = _TIME_FORMATS.get(shared["time_format"], shared["time_format"])
+
     if shared:
         all_names = list(enabled_modules or []) + list(module_config.keys())
         for name in dict.fromkeys(all_names):  # deduplicated, insertion order preserved

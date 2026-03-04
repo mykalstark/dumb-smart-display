@@ -29,6 +29,7 @@ class Module(BaseDisplayModule):
         self.feed_url: str = self.config.get("feed_url", "")
         self.max_items: int = int(self.config.get("max_items", 8))
         self.refresh_seconds: int = int(self.config.get("refresh_seconds", 1800))
+        self.time_format: str = self.config.get("time_format", "%H:%M")
 
         self._items: List[Dict[str, str]] = []
         self._feed_title: str = "RSS Feed"
@@ -160,7 +161,7 @@ class Module(BaseDisplayModule):
         # --- Footer ---
         updated_str = ""
         if self._last_updated:
-            updated_str = f"Updated {self._last_updated.strftime('%H:%M')}"
+            updated_str = f"Updated {self._last_updated.strftime(self.time_format)}"
         total_pages = self._total_pages()
         page_str = f"Page {self._page + 1} / {total_pages}" if total_pages > 1 else ""
         footer_parts = [p for p in [page_str, updated_str] if p]

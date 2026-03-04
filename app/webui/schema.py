@@ -66,6 +66,16 @@ LOCATION_SCHEMA: SectionSchema = {
                 {"value": "celsius", "label": "Celsius (°C)"},
             ],
         },
+        {
+            "key": "time_format",
+            "label": "Time Format",
+            "type": "select",
+            "options": [
+                {"value": "12h", "label": "12-hour (2:30 PM)"},
+                {"value": "24h", "label": "24-hour (14:30)"},
+            ],
+            "help": "Applies to all modules that display a time of day.",
+        },
     ],
 }
 
@@ -139,15 +149,6 @@ MODULE_SCHEMAS: Dict[str, SectionSchema] = {
         "label": "Clock",
         "description": "Time, date, and current weather conditions.",
         "fields": [
-            {
-                "key": "time_format",
-                "label": "Time Format",
-                "type": "select",
-                "options": [
-                    {"value": "%I:%M %p", "label": "12-hour (02:30 PM)"},
-                    {"value": "%H:%M", "label": "24-hour (14:30)"},
-                ],
-            },
             {
                 "key": "date_format",
                 "label": "Date Format",
@@ -258,15 +259,6 @@ MODULE_SCHEMAS: Dict[str, SectionSchema] = {
                 "type": "toggle",
             },
             {
-                "key": "time_format",
-                "label": "Time Format",
-                "type": "select",
-                "options": [
-                    {"value": "%H:%M", "label": "24-hour (14:30)"},
-                    {"value": "%I:%M %p", "label": "12-hour (02:30 PM)"},
-                ],
-            },
-            {
                 "key": "refresh_seconds",
                 "label": "Refresh Interval (seconds)",
                 "type": "number",
@@ -290,15 +282,6 @@ MODULE_SCHEMAS: Dict[str, SectionSchema] = {
                     "Your private iCal link. In Google Calendar: Settings → [calendar] → "
                     "'Secret address in iCal format'. Both https:// and webcal:// are accepted."
                 ),
-            },
-            {
-                "key": "time_format",
-                "label": "Time Format",
-                "type": "select",
-                "options": [
-                    {"value": "%I:%M %p", "label": "12-hour (02:30 PM)"},
-                    {"value": "%H:%M", "label": "24-hour (14:30)"},
-                ],
             },
             {
                 "key": "max_events_per_day",

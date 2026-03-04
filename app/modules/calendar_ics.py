@@ -317,7 +317,7 @@ class Module(BaseDisplayModule):
         # Updated footer
         if self._last_updated:
             small_font = self.fonts.get("small", self.fonts.get("default"))
-            upd = f"Updated {self._last_updated.strftime('%H:%M')}"
+            upd = f"Updated {self._last_updated.strftime(self.time_format)}"
             uw, uh = self._get_text_size(draw, upd, small_font)
             # Draw inside the gap between columns, centered
             gap_cx = padding + col_w + gap // 2
