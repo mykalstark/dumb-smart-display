@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from PIL import Image, ImageDraw, ImageFont
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
-from app.core.theme import OUTER_PAD, PAGE_HEADER_H, draw_page_header
+from app.core.theme import OUTER_PAD, PAGE_HEADER_H, draw_page_header, fit_header_font
 
 log = logging.getLogger(__name__)
 
@@ -142,8 +142,7 @@ class Module(BaseDisplayModule):
         inner_w = width - padding * 2
 
         # Page header — event name in the pill bar
-        name_font = self.fonts.get("default")   # 24px for header
-        draw_page_header(draw, width, event["name"], name_font)
+        draw_page_header(draw, width, event["name"], fit_header_font(draw, event["name"], width))
 
         label_font = self.fonts.get("default")
         label_w, label_h = self._get_text_size(draw, label_str, label_font)

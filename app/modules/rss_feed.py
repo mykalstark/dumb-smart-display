@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from PIL import Image, ImageDraw
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
-from app.core.theme import OUTER_PAD, PAGE_HEADER_H, draw_page_header
+from app.core.theme import OUTER_PAD, PAGE_HEADER_H, draw_page_header, fit_header_font
 
 log = logging.getLogger(__name__)
 
@@ -140,20 +140,12 @@ class Module(BaseDisplayModule):
             return image
 
         padding = OUTER_PAD
-        hdr_font = self.fonts.get("default")   # 24px — matches PAGE_HEADER_FONT_SIZE
         body_font = self.fonts.get("default")
         small_font = self.fonts.get("small", body_font)
 
         # --- Header (pill style matching home screen) ---
-        # Truncate feed title to fit the pill interior
         feed_title = self._feed_title
-        max_title_w = width - 80  # pill has 16px inset each side + some margin
-        while len(feed_title) > 1:
-            tw, _ = self._get_text_size(draw, feed_title, hdr_font)
-            if tw <= max_title_w:
-                break
-            feed_title = feed_title[:-2] + "…"
-        draw_page_header(draw, width, feed_title, hdr_font)
+        draw_page_header(draw, width, feed_title, fit_header_font(draw, feed_title, width))
 
         # --- Footer ---
         updated_str = ""

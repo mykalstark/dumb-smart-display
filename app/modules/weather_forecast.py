@@ -13,8 +13,8 @@ from PIL import Image, ImageDraw, ImageFont
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
 from app.core.theme import (
     PAGE_HEADER_H, PAGE_HEADER_RX, PAGE_HEADER_RY, PAGE_HEADER_RADIUS,
-    PAGE_HEADER_FONT_SIZE, DIVIDER_W, COL_GAP, LINE_SPACING,
-    draw_page_header, get_text_size as _theme_get_text_size,
+    DIVIDER_W, COL_GAP, LINE_SPACING,
+    draw_page_header, fit_header_font, get_text_size as _theme_get_text_size,
 )
 
 log = logging.getLogger(__name__)
@@ -458,7 +458,6 @@ class Module(BaseDisplayModule):
         )
 
         # Fonts
-        header_font = self._load_font(PAGE_HEADER_FONT_SIZE)
         n_days      = len(self._days)
         col_w       = width // n_days
         day_font    = self._load_day_font(col_w)
@@ -473,7 +472,7 @@ class Module(BaseDisplayModule):
         icon_font = self._load_icon_font(ICON_FONT_SIZE)
 
         # --- Header ---
-        draw_page_header(draw, width, "7 Day Forecast", header_font, HEADER_H)
+        draw_page_header(draw, width, "7 Day Forecast", fit_header_font(draw, "7 Day Forecast", width, HEADER_H), HEADER_H)
 
         body_top = HEADER_H + 1
         body_h   = height - body_top

@@ -9,7 +9,7 @@ import requests
 from PIL import Image, ImageDraw, ImageFont
 
 from app.core.module_interface import DEFAULT_LAYOUTS, LayoutPreset
-from app.core.theme import OUTER_PAD, CARD_RADIUS, PAGE_HEADER_H, draw_page_header
+from app.core.theme import OUTER_PAD, CARD_RADIUS, PAGE_HEADER_H, draw_page_header, fit_header_font
 
 log = logging.getLogger(__name__)
 
@@ -288,7 +288,7 @@ class Module:
         draw = ImageDraw.Draw(image)
 
         # Page header — "Tonight's Dinner" in the standard pill bar
-        draw_page_header(draw, width, "Tonight's Dinner", self.fonts.get("default"))
+        draw_page_header(draw, width, "Tonight's Dinner", fit_header_font(draw, "Tonight's Dinner", width))
 
         padding = OUTER_PAD
         body_top = PAGE_HEADER_H + padding

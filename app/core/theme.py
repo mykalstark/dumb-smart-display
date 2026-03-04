@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Tuple
 
-from PIL import ImageDraw
+from PIL import ImageDraw, ImageFont
 
 # ---------------------------------------------------------------------------
 # Design constants
@@ -27,9 +27,10 @@ PAGE_HEADER_H = 112     # height of the top header zone (px)
 PAGE_HEADER_RX = 16     # horizontal inset for the pill rectangle
 PAGE_HEADER_RY = 16     # vertical inset for the pill rectangle
 PAGE_HEADER_RADIUS = 20 # corner radius of the pill
-PAGE_HEADER_FONT_SIZE = 36  # font size for page header text
 
 DIVIDER_W = 1           # thin separator / section divider line width
+
+HEADER_FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +45,35 @@ def get_text_size(draw: ImageDraw.ImageDraw, text: str, font: Any) -> Tuple[int,
     """
     bbox = draw.textbbox((0, 0), text, font=font)
     return bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+
+def fit_header_font(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    width: int,
+    header_h: int = PAGE_HEADER_H,
+    min_size: int = 16,
+) -> Any:
+    """Return the largest DejaVuSans-Bold font whose rendered *text* fits the pill interior.
+
+    Tries sizes from 80 px down to *min_size*, returning the first that fits within
+    the usable area (pill interior minus safety margins). Falls back to a small size
+    or the default bitmap font if the bold TTF cannot be loaded.
+    """
+    max_w = width - 2 * PAGE_HEADER_RX - 16   # 16 px total horizontal safety padding
+    max_h = header_h - 2 * PAGE_HEADER_RY - 4  # 4 px total vertical safety padding
+    for size in range(80, min_size - 1, -1):
+        try:
+            font = ImageFont.truetype(HEADER_FONT_PATH, size)
+        except Exception:
+            return ImageFont.load_default()
+        tw, th = get_text_size(draw, text, font)
+        if tw <= max_w and th <= max_h:
+            return font
+    try:
+        return ImageFont.truetype(HEADER_FONT_PATH, min_size)
+    except Exception:
+        return ImageFont.load_default()
 
 
 def draw_page_header(

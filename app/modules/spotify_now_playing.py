@@ -10,7 +10,7 @@ import requests
 from PIL import Image, ImageDraw
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
-from app.core.theme import OUTER_PAD, CARD_RADIUS, PAGE_HEADER_H, draw_page_header
+from app.core.theme import OUTER_PAD, CARD_RADIUS, PAGE_HEADER_H, draw_page_header, fit_header_font
 
 log = logging.getLogger(__name__)
 
@@ -232,7 +232,7 @@ class Module(BaseDisplayModule):
 
         # Page header — always shown so the screen is identifiable at a glance
         hdr_text = "Now Playing" if (self._track and self._is_playing) else "Spotify"
-        draw_page_header(draw, width, hdr_text, default_font)
+        draw_page_header(draw, width, hdr_text, fit_header_font(draw, hdr_text, width))
         body_top = PAGE_HEADER_H + padding
 
         if self._track is None:
