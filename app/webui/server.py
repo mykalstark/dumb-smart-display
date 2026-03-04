@@ -199,6 +199,30 @@ def _do_git_pull() -> Tuple[bool, str]:
         return False, str(exc)
 
 
+def _get_head_commit() -> str:
+    """Return the current HEAD commit short hash, or empty string on failure."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5, cwd=str(_ROOT),
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def _get_current_branch() -> str:
+    """Return the currently checked-out branch name, or 'unknown' on failure."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=5, cwd=str(_ROOT),
+        )
+        return result.stdout.strip() if result.returncode == 0 else "unknown"
+    except Exception:
+        return "unknown"
+
+
 def _pip_install() -> Tuple[bool, str]:
     """
     Re-run ``pip install -r requirements.txt`` inside the project venv so that
@@ -561,15 +585,47 @@ def update_stream():  # type: ignore[no-untyped-def]
         yield _sse("Pulling latest code…")
         yield _sse("2", event="stage")
 
+        branch = _get_current_branch()
+        yield _sse(f"Current branch: {branch}")
+        if branch != "main":
+            yield _sse(f"⚠ Warning: not on 'main' branch — switching to main…")
+            chk = subprocess.run(
+                ["git", "checkout", "main"],
+                capture_output=True, text=True, timeout=10, cwd=str(_ROOT),
+            )
+            if chk.returncode != 0:
+                yield _sse(f"✗ Could not switch to main: {chk.stderr.strip()}")
+                yield _sse(event="fail")
+                return
+            yield _sse("Switched to branch 'main'.")
+
+        head_before = _get_head_commit()
         pull_ok, pull_msg = _do_git_pull()
         yield _sse(pull_msg)
         if not pull_ok:
             yield _sse(event="fail")
             return
 
-        if count == 0 and "already up to date" in pull_msg.lower():
-            yield _sse(event="uptodate")
+        head_after = _get_head_commit()
+        actually_pulled = head_before and head_after and head_before != head_after
+
+        # If HEAD didn't advance, nothing was actually applied.
+        if not actually_pulled:
+            if count == 0:
+                # Genuinely up to date — no commits were pending.
+                yield _sse(event="uptodate")
+            else:
+                # Fetch showed pending commits but pull didn't advance HEAD.
+                yield _sse(
+                    f"✗ git pull reported success but HEAD did not advance "
+                    f"(still at {head_after}). "
+                    f"The local repository may have diverged from origin/main."
+                )
+                yield _sse("Run 'git status' on the Pi to investigate.")
+                yield _sse(event="fail")
             return
+
+        yield _sse(f"Updated: {head_before} → {head_after}")
 
         # --- Stage 3: install script ---
         yield _sse("Running install script…")
