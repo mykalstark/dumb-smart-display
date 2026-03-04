@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 import yaml
-from PIL import Image, ImageDraw, ImageFont  # <--- Need this to load fonts
+from PIL import Image, ImageDraw, ImageEnhance, ImageFont  # <--- Need this to load fonts
 
 from app.buttons import init_buttons
 from app.core.module_manager import ModuleManager
@@ -144,12 +144,35 @@ def _render_after_hours(display: "Display", config: Dict[str, Any], fonts: Dict[
     if photo_name:
         photo_path = _UPLOADS_DIR / photo_name
         try:
-            raw = Image.open(photo_path).convert("RGB")
+            # 1. Open and scale down with high-quality resampling.
+            #    Work in grayscale ("L") — the display is 1-bit B&W so colour
+            #    information would be lost anyway, and grayscale gives the
+            #    dithering algorithm the most accurate tonal data to work with.
+            raw = Image.open(photo_path).convert("L")
             raw.thumbnail((w, h), Image.LANCZOS)
-            canvas = Image.new("RGB", (w, h), (255, 255, 255))
+
+            # 2. Boost contrast and sharpness before dithering.
+            #    Dithering "softens" an image visually by turning mid-tones into
+            #    stipple patterns; pre-enhancing gives it more to work with and
+            #    produces a crisper, more recognisable result on e-ink.
+            raw = ImageEnhance.Contrast(raw).enhance(1.8)
+            raw = ImageEnhance.Sharpness(raw).enhance(2.0)
+
+            # 3. Letterbox onto a white canvas so the image is exactly w × h.
+            canvas = Image.new("L", (w, h), 255)
             offset = ((w - raw.width) // 2, (h - raw.height) // 2)
             canvas.paste(raw, offset)
-            image = canvas
+
+            # 4. Apply Floyd-Steinberg dithering to convert to 1-bit.
+            #    PIL's default for convert("1") is FLOYDSTEINBERG, which
+            #    distributes quantisation error to neighbouring pixels and creates
+            #    the illusion of mid-tones that a simple 128-threshold cannot.
+            #    The resulting "1" mode image passes through display._prepare_image()
+            #    unchanged: convert("L") on a 1-bit image yields only 0 / 255, and
+            #    the 128-threshold step is then a no-op, so the dither pattern
+            #    survives all the way to the e-ink panel.
+            image = canvas.convert("1", dither=Image.FLOYDSTEINBERG)
+            print("[MAIN] After hours photo dithered successfully.", flush=True)
         except Exception as exc:
             print(f"[MAIN] After hours photo load failed: {exc}", flush=True)
 
