@@ -28,8 +28,8 @@ from app.core.theme import (
 | `LINE_SPACING` | 6 px | Vertical gap between wrapped text lines |
 | `CARD_RADIUS` | 16 px | `rounded_rectangle` corner radius for all cards |
 | `CARD_OUTLINE` | 2 px | Card border stroke width |
-| `PAGE_HEADER_H` | 56 px | Height of the top header zone |
-| `PAGE_HEADER_FONT_SIZE` | 24 px | Font size for page header text |
+| `PAGE_HEADER_H` | 112 px | Height of the top header zone |
+| `PAGE_HEADER_FONT_SIZE` | 36 px | Font size for page header text |
 | `DIVIDER_W` | 1 px | Thin separator / section divider line width |
 
 ---

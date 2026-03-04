@@ -23,11 +23,11 @@ LINE_SPACING = 6        # vertical gap between wrapped text lines
 CARD_RADIUS = 16        # rounded_rectangle corner radius for all cards
 CARD_OUTLINE = 2        # card border stroke width
 
-PAGE_HEADER_H = 56      # height of the top header zone (px)
+PAGE_HEADER_H = 112     # height of the top header zone (px)
 PAGE_HEADER_RX = 16     # horizontal inset for the pill rectangle
-PAGE_HEADER_RY = 8      # vertical inset for the pill rectangle
-PAGE_HEADER_RADIUS = 16 # corner radius of the pill
-PAGE_HEADER_FONT_SIZE = 24  # font size for page header text
+PAGE_HEADER_RY = 16     # vertical inset for the pill rectangle
+PAGE_HEADER_RADIUS = 20 # corner radius of the pill
+PAGE_HEADER_FONT_SIZE = 36  # font size for page header text
 
 DIVIDER_W = 1           # thin separator / section divider line width
 

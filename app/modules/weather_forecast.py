@@ -438,7 +438,7 @@ class Module(BaseDisplayModule):
         TOP_PAD   = 8    # space above day name
         DAY_H     = 58   # zone for large day-name text
         GAP1      = 6    # gap: day name → icon
-        ICON_H    = 180  # zone for weather icon glyph / PIL drawing
+        ICON_H    = 140  # zone for weather icon glyph / PIL drawing
         GAP2      = 6    # gap: icon → date
         DATE_H    = 24   # zone for date number
         GAP3      = 4    # gap: date → separator
