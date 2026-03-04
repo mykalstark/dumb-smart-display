@@ -9,7 +9,7 @@ import requests
 from PIL import Image, ImageDraw, ImageFont
 
 from app.core.module_interface import DEFAULT_LAYOUTS, LayoutPreset
-from app.core.theme import OUTER_PAD, CARD_RADIUS
+from app.core.theme import OUTER_PAD, CARD_RADIUS, PAGE_HEADER_H, draw_page_header
 
 log = logging.getLogger(__name__)
 
@@ -287,12 +287,17 @@ class Module:
         image = Image.new("1", (width, height), 255)
         draw = ImageDraw.Draw(image)
 
-        padding = OUTER_PAD
-        header_bottom = int(height * 0.45)
+        # Page header — "Tonight's Dinner" in the standard pill bar
+        draw_page_header(draw, width, "Tonight's Dinner", self.fonts.get("default"))
 
-        title_box = (padding, padding, width - padding, header_bottom)
+        padding = OUTER_PAD
+        body_top = PAGE_HEADER_H + padding
+        available_h = height - body_top - padding
+        header_bottom = body_top + int(available_h * 0.45)
+
+        title_box = (padding, body_top, width - padding, header_bottom)
         meal_text = str(self.meal_details.get("name") or "You Effed up, Doordash")
-        bottom_of_title = self._draw_title_card(draw, title_box, meal_text)
+        bottom_of_title = self._draw_title_card(draw, title_box, meal_text, show_label=False)
 
         time_box_top = bottom_of_title + 10
         time_box_bottom = min(height - 90, time_box_top + 200)
@@ -421,12 +426,10 @@ class Module:
             result = result.lstrip("0")
         return result
 
-    def _draw_title_card(self, draw: ImageDraw.Draw, box: Tuple[int, int, int, int], meal_text: str) -> int:
+    def _draw_title_card(self, draw: ImageDraw.Draw, box: Tuple[int, int, int, int], meal_text: str, *, show_label: bool = True) -> int:
         x0, y0, x1, y1 = self._inset_box(box, 12)
         draw.rounded_rectangle([(x0, y0), (x1, y1)], radius=CARD_RADIUS, outline=0, width=2)
 
-        header_text = "Tonight's Dinner"
-        base_header_font = self.fonts.get("large", self.fonts.get("default"))
         base_meal_font = self.fonts.get("large", self.fonts.get("default"))
 
         inner_padding = 14
@@ -435,25 +438,27 @@ class Module:
         content_y0 = y0 + inner_padding
         content_y1 = y1 - inner_padding
 
-        header_max_height = max(int((y1 - y0) * 0.25), 32)
-        header_font, header_lines, header_height = self._fit_text_lines(
-            draw,
-            header_text,
-            base_header_font,
-            content_x1 - content_x0,
-            header_max_height,
-            min_size=18,
-            line_spacing=4,
-        )
+        if show_label:
+            header_text = "Tonight's Dinner"
+            base_header_font = self.fonts.get("large", self.fonts.get("default"))
+            header_max_height = max(int((y1 - y0) * 0.25), 32)
+            header_font, header_lines, header_height = self._fit_text_lines(
+                draw,
+                header_text,
+                base_header_font,
+                content_x1 - content_x0,
+                header_max_height,
+                min_size=18,
+                line_spacing=4,
+            )
+            header_line = header_lines[0] if header_lines else ""
+            hw, hh = self._get_text_size(draw, header_line, header_font)
+            draw.text(((content_x0 + content_x1 - hw) // 2, content_y0), header_line, font=header_font, fill=0)
+            meal_area_top = content_y0 + header_height + 14
+        else:
+            meal_area_top = content_y0
 
-        header_line = header_lines[0] if header_lines else ""
-        hw, hh = self._get_text_size(draw, header_line, header_font)
-        header_y = content_y0
-        draw.text(((content_x0 + content_x1 - hw) // 2, header_y), header_line, font=header_font, fill=0)
-
-        meal_area_top = header_y + header_height + 14
-        meal_area_bottom = content_y1
-        meal_area_height = max(meal_area_bottom - meal_area_top, 20)
+        meal_area_height = max(content_y1 - meal_area_top, 20)
 
         meal_font, meal_lines, meal_block_height = self._fit_text_lines(
             draw,
