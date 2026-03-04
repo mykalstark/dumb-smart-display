@@ -9,6 +9,10 @@ import requests
 from PIL import Image, ImageDraw
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
+from app.core.theme import (
+    OUTER_PAD, INNER_PAD, COL_GAP, LINE_SPACING,
+    draw_card, draw_card_header,
+)
 
 log = logging.getLogger(__name__)
 
@@ -250,25 +254,20 @@ class Module(BaseDisplayModule):
         events: List[_Event],
     ) -> None:
         x0, y0, x1, y1 = box
-        draw.rectangle([(x0, y0), (x1, y1)], outline=0, width=2)
+        draw_card(draw, x0, y0, x1, y1)
 
         header_font = self.fonts.get("large", self.fonts.get("default"))
         body_font = self.fonts.get("default")
         small_font = self.fonts.get("small", body_font)
 
-        inner_pad = 12
-        content_x = x0 + inner_pad
-        content_w = (x1 - x0) - inner_pad * 2
+        content_x = x0 + INNER_PAD
+        content_w = (x1 - x0) - INNER_PAD * 2
 
         # Column heading
-        hw, hh = self._get_text_size(draw, heading, header_font)
-        draw.text((content_x, y0 + 8), heading, font=header_font, fill=0)
-        sep_y = y0 + hh + 14
-        draw.line([(x0 + inner_pad, sep_y), (x1 - inner_pad, sep_y)], fill=0, width=1)
-
-        y = sep_y + 8
+        content_top = draw_card_header(draw, x0, y0, x1, heading, header_font)
+        y = content_top + INNER_PAD // 2
         _, lh = self._get_text_size(draw, "Ag", body_font)
-        line_gap = 6
+        line_gap = LINE_SPACING
 
         if not events:
             draw.text((content_x, y), "No events", font=small_font, fill=0)
@@ -295,8 +294,8 @@ class Module(BaseDisplayModule):
             self._draw_centered(draw, width, height, self._error)
             return image
 
-        padding = 16
-        gap = 12
+        padding = OUTER_PAD
+        gap = COL_GAP
         usable_w = width - padding * 2
         col_w = (usable_w - gap) // 2
 

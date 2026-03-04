@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from PIL import Image, ImageDraw
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
+from app.core.theme import OUTER_PAD, PAGE_HEADER_H, draw_page_header
 
 log = logging.getLogger(__name__)
 
@@ -138,25 +139,21 @@ class Module(BaseDisplayModule):
             self._draw_centered(draw, width, height, "No items in feed")
             return image
 
-        padding = 20
-        header_font = self.fonts.get("large", self.fonts.get("default"))
+        padding = OUTER_PAD
+        hdr_font = self.fonts.get("default")   # 24px — matches PAGE_HEADER_FONT_SIZE
         body_font = self.fonts.get("default")
         small_font = self.fonts.get("small", body_font)
 
-        # --- Header ---
-        # Truncate feed title to fit one line
+        # --- Header (pill style matching home screen) ---
+        # Truncate feed title to fit the pill interior
         feed_title = self._feed_title
-        _, hh = self._get_text_size(draw, feed_title, header_font)
-        max_title_w = width - padding * 2
-        while feed_title:
-            tw, _ = self._get_text_size(draw, feed_title, header_font)
+        max_title_w = width - 80  # pill has 16px inset each side + some margin
+        while len(feed_title) > 1:
+            tw, _ = self._get_text_size(draw, feed_title, hdr_font)
             if tw <= max_title_w:
                 break
             feed_title = feed_title[:-2] + "…"
-
-        draw.text((padding, padding), feed_title, font=header_font, fill=0)
-        line_y = padding + hh + 6
-        draw.line([(padding, line_y), (width - padding, line_y)], fill=0, width=2)
+        draw_page_header(draw, width, feed_title, hdr_font)
 
         # --- Footer ---
         updated_str = ""
@@ -173,7 +170,7 @@ class Module(BaseDisplayModule):
             draw.text(((width - fw) // 2, footer_y), footer_text, font=small_font, fill=0)
 
         # --- Body ---
-        body_top = line_y + 10
+        body_top = PAGE_HEADER_H + padding
         body_bottom = footer_y - 8
         body_h = body_bottom - body_top
         body_w = width - padding * 2

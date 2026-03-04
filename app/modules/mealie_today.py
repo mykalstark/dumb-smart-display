@@ -9,6 +9,7 @@ import requests
 from PIL import Image, ImageDraw, ImageFont
 
 from app.core.module_interface import DEFAULT_LAYOUTS, LayoutPreset
+from app.core.theme import OUTER_PAD, CARD_RADIUS
 
 log = logging.getLogger(__name__)
 
@@ -286,7 +287,7 @@ class Module:
         image = Image.new("1", (width, height), 255)
         draw = ImageDraw.Draw(image)
 
-        padding = 24
+        padding = OUTER_PAD
         header_bottom = int(height * 0.45)
 
         title_box = (padding, padding, width - padding, header_bottom)
@@ -422,7 +423,7 @@ class Module:
 
     def _draw_title_card(self, draw: ImageDraw.Draw, box: Tuple[int, int, int, int], meal_text: str) -> int:
         x0, y0, x1, y1 = self._inset_box(box, 12)
-        draw.rounded_rectangle([(x0, y0), (x1, y1)], radius=18, outline=0, width=2)
+        draw.rounded_rectangle([(x0, y0), (x1, y1)], radius=CARD_RADIUS, outline=0, width=2)
 
         header_text = "Tonight's Dinner"
         base_header_font = self.fonts.get("large", self.fonts.get("default"))
@@ -515,7 +516,7 @@ class Module:
         cy = (y0 + y1 - height_needed) // 2
         draw.rounded_rectangle(
             [(cx, cy), (cx + width_needed, cy + height_needed)],
-            radius=12,
+            radius=CARD_RADIUS,
             outline=0,
             width=2,
         )

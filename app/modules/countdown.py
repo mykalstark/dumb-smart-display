@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from PIL import Image, ImageDraw, ImageFont
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
+from app.core.theme import OUTER_PAD, PAGE_HEADER_H, draw_page_header
 
 log = logging.getLogger(__name__)
 
@@ -137,13 +138,12 @@ class Module(BaseDisplayModule):
             count_str = str(abs(delta))
             label_str = "days ago"
 
-        padding = 28
+        padding = OUTER_PAD
         inner_w = width - padding * 2
-        inner_h = height - padding * 2
 
-        # Reserve space for name (top) and label (bottom)
-        name_font = self.fonts.get("large", self.fonts.get("default"))
-        name_w, name_h = self._get_text_size(draw, event["name"], name_font)
+        # Page header — event name in the pill bar
+        name_font = self.fonts.get("default")   # 24px for header
+        draw_page_header(draw, width, event["name"], name_font)
 
         label_font = self.fonts.get("default")
         label_w, label_h = self._get_text_size(draw, label_str, label_font)
@@ -156,20 +156,13 @@ class Module(BaseDisplayModule):
             _, pagination_h = self._get_text_size(draw, pag_str, pag_font)
             pagination_h += 10
 
-        number_max_h = inner_h - name_h - 18 - label_h - 16 - pagination_h
+        body_top = PAGE_HEADER_H + padding
+        body_h = height - body_top - padding
+        number_max_h = body_h - label_h - 16 - pagination_h
         number_max_w = inner_w
 
-        # Draw event name at top, centered
-        name_x = (width - name_w) // 2
-        name_y = padding
-        draw.text((name_x, name_y), event["name"], font=name_font, fill=0)
-
-        # Divider line under name
-        line_y = name_y + name_h + 8
-        draw.line([(padding, line_y), (width - padding, line_y)], fill=0, width=1)
-
-        # Big number centered in remaining space
-        number_area_top = line_y + 10
+        # Big number centered in body area
+        number_area_top = body_top
         if delta == 0:
             # "TODAY" — use large font, no huge number
             today_font = self._load_font(96)

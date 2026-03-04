@@ -9,6 +9,10 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from PIL import Image, ImageDraw
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
+from app.core.theme import (
+    OUTER_PAD, INNER_PAD, COL_GAP, LINE_SPACING,
+    draw_card, draw_card_header,
+)
 from app.modules.ticktick_client import TaskItem, TickTickClient
 
 log = logging.getLogger(__name__)
@@ -140,8 +144,8 @@ class Module(BaseDisplayModule):
             self._draw_centered(draw, width, height, self.error_message)
             return image
 
-        padding = 24
-        column_gap = 12
+        padding = OUTER_PAD
+        column_gap = COL_GAP
         usable_width = width - (padding * 2) - column_gap
         column_width = usable_width // 2
         header_font = self.fonts.get("large", self.fonts.get("default"))
@@ -187,25 +191,23 @@ class Module(BaseDisplayModule):
         small_font: Any,
     ) -> None:
         x0, y0, x1, y1 = box
-        draw.rectangle(box, outline=0, width=2)
-        title_w, title_h = self._get_text_size(draw, title, header_font)
-        draw.text((x0 + 12, y0 + 8), title, font=header_font, fill=0)
-
-        line_y = y0 + title_h + 20
-        max_width = (x1 - x0) - 24
+        draw_card(draw, x0, y0, x1, y1)
+        content_top = draw_card_header(draw, x0, y0, x1, title, header_font)
+        line_y = content_top + INNER_PAD // 2
+        max_width = (x1 - x0) - INNER_PAD * 2
 
         if not tasks:
             placeholder = "No tasks" if overflow == 0 else "Tasks hidden"
-            draw.text((x0 + 12, line_y), placeholder, font=body_font, fill=0)
+            draw.text((x0 + INNER_PAD, line_y), placeholder, font=body_font, fill=0)
             return
 
         for task in tasks:
             line = self._format_task_line(task)
             wrapped = self._wrap_text(draw, line, body_font, max_width)
             for segment in wrapped:
-                draw.text((x0 + 12, line_y), segment, font=body_font, fill=0)
+                draw.text((x0 + INNER_PAD, line_y), segment, font=body_font, fill=0)
                 _, lh = self._get_text_size(draw, segment, body_font)
-                line_y += lh + 6
+                line_y += lh + LINE_SPACING
                 if line_y >= y1 - 40:
                     break
             if line_y >= y1 - 40:
@@ -213,4 +215,4 @@ class Module(BaseDisplayModule):
 
         if overflow > 0 and line_y < y1 - 20:
             overflow_text = f"+{overflow} more…"
-            draw.text((x0 + 12, y1 - 28), overflow_text, font=small_font, fill=0)
+            draw.text((x0 + INNER_PAD, y1 - 28), overflow_text, font=small_font, fill=0)

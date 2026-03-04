@@ -10,6 +10,7 @@ import requests
 from PIL import Image, ImageDraw
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
+from app.core.theme import OUTER_PAD, CARD_RADIUS, PAGE_HEADER_H, draw_page_header
 
 log = logging.getLogger(__name__)
 
@@ -222,40 +223,45 @@ class Module(BaseDisplayModule):
             self._draw_centered(draw, width, height, self._error)
             return image
 
-        padding = 32
+        padding = OUTER_PAD
         inner_w = width - padding * 2
 
         large_font = self.fonts.get("large", self.fonts.get("default"))
         default_font = self.fonts.get("default")
         small_font = self.fonts.get("small", default_font)
 
+        # Page header — always shown so the screen is identifiable at a glance
+        hdr_text = "Now Playing" if (self._track and self._is_playing) else "Spotify"
+        draw_page_header(draw, width, hdr_text, default_font)
+        body_top = PAGE_HEADER_H + padding
+
         if self._track is None:
             # Nothing playing — show a simple idle state
-            msg_font = default_font
             msg = "Nothing playing"
-            mw, mh = self._get_text_size(draw, msg, msg_font)
-            draw.text(((width - mw) // 2, (height - mh) // 2 - 16), msg, font=msg_font, fill=0)
+            mw, mh = self._get_text_size(draw, msg, default_font)
+            body_mid = body_top + (height - body_top - mh) // 2
+            draw.text(((width - mw) // 2, body_mid), msg, font=default_font, fill=0)
 
             if self._last_updated:
                 upd = f"Last checked {self._last_updated.strftime(self.time_format)}"
                 uw, uh = self._get_text_size(draw, upd, small_font)
                 draw.text(
-                    ((width - uw) // 2, (height - mh) // 2 - 16 + mh + 12),
+                    ((width - uw) // 2, body_mid + mh + 12),
                     upd, font=small_font, fill=0,
                 )
             return image
 
-        # Status badge: "▶ Now Playing" or "⏸ Paused"
+        # Status badge: "Now Playing" or "Paused"
         status_text = "Now Playing" if self._is_playing else "Paused"
         sw, sh = self._get_text_size(draw, status_text, small_font)
         badge_pad = 10
         badge_w = sw + badge_pad * 2
         badge_h = sh + badge_pad
         badge_x = (width - badge_w) // 2
-        badge_y = padding
+        badge_y = body_top
         draw.rounded_rectangle(
             [(badge_x, badge_y), (badge_x + badge_w, badge_y + badge_h)],
-            radius=8,
+            radius=CARD_RADIUS,
             fill=0 if self._is_playing else None,
             outline=0,
             width=2,

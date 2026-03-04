@@ -11,6 +11,11 @@ import requests
 from PIL import Image, ImageDraw, ImageFont
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
+from app.core.theme import (
+    PAGE_HEADER_H, PAGE_HEADER_RX, PAGE_HEADER_RY, PAGE_HEADER_RADIUS,
+    PAGE_HEADER_FONT_SIZE, DIVIDER_W, COL_GAP, LINE_SPACING,
+    draw_page_header, get_text_size as _theme_get_text_size,
+)
 
 log = logging.getLogger(__name__)
 
@@ -429,7 +434,7 @@ class Module(BaseDisplayModule):
             return image
 
         # --- Fixed layout zones (px) ---
-        HEADER_H  = 56   # styled header bar
+        HEADER_H  = PAGE_HEADER_H   # styled header bar
         TOP_PAD   = 8    # space above day name
         DAY_H     = 58   # zone for large day-name text
         GAP1      = 6    # gap: day name → icon
@@ -453,7 +458,7 @@ class Module(BaseDisplayModule):
         )
 
         # Fonts
-        header_font = self._load_font(24)
+        header_font = self._load_font(PAGE_HEADER_FONT_SIZE)
         n_days      = len(self._days)
         col_w       = width // n_days
         day_font    = self._load_day_font(col_w)
@@ -467,21 +472,8 @@ class Module(BaseDisplayModule):
         ICON_FONT_SIZE = min(130, col_w - 16)
         icon_font = self._load_icon_font(ICON_FONT_SIZE)
 
-        # --- Header (styled black rounded-rectangle, white text — matches home screen) ---
-        hdr_text = "7 Day Forecast"
-        hdr_rx, hdr_ry = 16, 8          # horizontal / vertical inset for the pill rect
-        draw.rounded_rectangle(
-            [(hdr_rx, hdr_ry), (width - hdr_rx, HEADER_H - hdr_ry)],
-            radius=12,
-            fill=0,
-        )
-        hw, hh = self._get_text_size(draw, hdr_text, header_font)
-        rect_inner_h = HEADER_H - 2 * hdr_ry   # 56 - 16 = 40px inner height
-        draw.text(
-            ((width - hw) // 2, hdr_ry + (rect_inner_h - hh) // 2),
-            hdr_text, font=header_font, fill=255,
-        )
-        draw.line([(0, HEADER_H), (width, HEADER_H)], fill=0, width=1)
+        # --- Header ---
+        draw_page_header(draw, width, "7 Day Forecast", header_font, HEADER_H)
 
         body_top = HEADER_H + 1
         body_h   = height - body_top

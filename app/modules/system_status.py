@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 from PIL import Image, ImageDraw, ImageFont
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
+from app.core.theme import OUTER_PAD, COL_GAP, CARD_RADIUS
 
 log = logging.getLogger(__name__)
 
@@ -188,7 +189,7 @@ class Module(BaseDisplayModule):
         inset = 6
         cx0, cy0, cx1, cy1 = x0 + inset, y0 + inset, x1 - inset, y1 - inset
 
-        draw.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=10, outline=0, width=2)
+        draw.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=CARD_RADIUS, outline=0, width=2)
 
         label_font = self.fonts.get("small", self.fonts.get("default"))
         value_font = self.fonts.get("default")
@@ -228,8 +229,8 @@ class Module(BaseDisplayModule):
             draw.text(((width - tw) // 2, (height - th) // 2), msg, font=font, fill=0)
             return image
 
-        padding = 16
-        gap = 10
+        padding = OUTER_PAD
+        gap = COL_GAP
 
         # Build stat cards list
         cards = []
