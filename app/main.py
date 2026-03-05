@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 import yaml
-from PIL import Image, ImageDraw, ImageEnhance, ImageFont  # <--- Need this to load fonts
+from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageOps, ImageStat  # <--- Need this to load fonts
 
 from app.buttons import init_buttons
 from app.core.module_manager import ModuleManager
@@ -144,42 +144,24 @@ def _render_after_hours(display: "Display", config: Dict[str, Any], fonts: Dict[
     if photo_name:
         photo_path = _UPLOADS_DIR / photo_name
         try:
-            # 1. Open and scale down with high-quality resampling.
-            #    Work in grayscale ("L") — the display is 1-bit B&W so colour
-            #    information would be lost anyway, and grayscale gives the
-            #    dithering algorithm the most accurate tonal data to work with.
-            raw = Image.open(photo_path).convert("L")
-            raw.thumbnail((w, h), Image.LANCZOS)
+            # 1) Normalize orientation from EXIF metadata, then convert to grayscale.
+            # This avoids rotated/sideways phone photos on the panel.
+            raw = ImageOps.exif_transpose(Image.open(photo_path)).convert("L")
+            raw = ImageOps.fit(raw, (w, h), method=Image.LANCZOS, centering=(0.5, 0.5))
 
-            # 2. Tone-map before dithering.
-            #
-            #    Order matters:
-            #      a) Brightness first — shifts the whole tonal range so the
-            #         bulk of pixels land near the mid-point (~128) where the
-            #         dither algorithm can produce a balanced mix of black and
-            #         white pixels.  Bright/outdoor photos need a significant
-            #         darkening (0.70) or most pixels will dither to white.
-            #      b) Contrast next — gently stretches the shifted range so
-            #         shadows stay dark and highlights stay bright.
-            #      c) Sharpness last — recovers edge detail lost by thumbnail.
-            raw = ImageEnhance.Brightness(raw).enhance(0.72)
-            raw = ImageEnhance.Contrast(raw).enhance(1.4)
-            raw = ImageEnhance.Sharpness(raw).enhance(2.0)
+            # 2) Auto-stretch tonal range and apply adaptive brightness targeting
+            # the mid-tones where 1-bit dithering looks best on the 7.5" V2 panel.
+            raw = ImageOps.autocontrast(raw, cutoff=1)
+            mean_luma = ImageStat.Stat(raw).mean[0]
+            target_luma = 120.0
+            brightness = target_luma / max(mean_luma, 1.0)
+            brightness = max(0.75, min(1.15, brightness))
+            raw = ImageEnhance.Brightness(raw).enhance(brightness)
+            raw = ImageEnhance.Contrast(raw).enhance(1.2)
+            raw = ImageEnhance.Sharpness(raw).enhance(1.6)
 
-            # 3. Letterbox onto a white canvas so the image is exactly w × h.
-            canvas = Image.new("L", (w, h), 255)
-            offset = ((w - raw.width) // 2, (h - raw.height) // 2)
-            canvas.paste(raw, offset)
-
-            # 4. Apply Floyd-Steinberg dithering to convert to 1-bit.
-            #    PIL's default for convert("1") is FLOYDSTEINBERG, which
-            #    distributes quantisation error to neighbouring pixels and creates
-            #    the illusion of mid-tones that a simple 128-threshold cannot.
-            #    The resulting "1" mode image passes through display._prepare_image()
-            #    unchanged: convert("L") on a 1-bit image yields only 0 / 255, and
-            #    the 128-threshold step is then a no-op, so the dither pattern
-            #    survives all the way to the e-ink panel.
-            image = canvas.convert("1", dither=Image.FLOYDSTEINBERG)
+            # 3) Convert to 1-bit with error diffusion for smoother apparent tones.
+            image = raw.convert("1", dither=Image.FLOYDSTEINBERG)
             print("[MAIN] After hours photo dithered successfully.", flush=True)
         except Exception as exc:
             print(f"[MAIN] After hours photo load failed: {exc}", flush=True)

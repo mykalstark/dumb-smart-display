@@ -140,16 +140,26 @@ class HardwareDisplayDriver:
                     setattr(self.epdconfig, attr, val)
 
     def _prepare_image(self, image: Image.Image) -> Image.Image:
-        # Resize first
-        img = image.resize((self.width, self.height))
+        target_size = (self.width, self.height)
+
+        # Preserve existing 1-bit content when possible; only resample when size changes.
+        if image.size != target_size:
+            resize_resample = Image.NEAREST if image.mode == "1" else Image.LANCZOS
+            img = image.resize(target_size, resample=resize_resample)
+        else:
+            img = image.copy()
+
         # Rotate if needed
         if self.rotation:
-            img = img.rotate(self.rotation, expand=False)
-        
-        # Convert to 1-bit using Thresholding (sharper text) instead of Dithering
-        # 1. Convert to Grayscale ('L')
-        # 2. Apply threshold: pixels < 128 becomes 0 (black), others 255 (white)
-        # 3. Convert to Binary ('1')
+            rotate_resample = Image.NEAREST if img.mode == "1" else Image.BICUBIC
+            img = img.rotate(self.rotation, expand=False, resample=rotate_resample)
+
+        # If callers already prepared a 1-bit image (e.g. after-hours photo dithering),
+        # pass it through unchanged so panel-ready dithering is not destroyed.
+        if img.mode == "1":
+            return img
+
+        # Convert all other inputs to 1-bit via a stable threshold.
         return img.convert("L").point(lambda x: 0 if x < 128 else 255, "1")
 
     def render_text(self, text: str) -> None:
