@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 import yaml
-from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageOps, ImageStat  # <--- Need this to load fonts
+from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageOps  # <--- Need this to load fonts
 
 from app.buttons import init_buttons
 from app.core.module_manager import ModuleManager
@@ -151,18 +151,43 @@ def _render_after_hours(display: "Display", config: Dict[str, Any], fonts: Dict[
 
             # 2) Auto-stretch tonal range and apply adaptive brightness targeting
             # the mid-tones where 1-bit dithering looks best on the 7.5" V2 panel.
-            raw = ImageOps.autocontrast(raw, cutoff=1)
-            mean_luma = ImageStat.Stat(raw).mean[0]
-            target_luma = 120.0
-            brightness = target_luma / max(mean_luma, 1.0)
-            brightness = max(0.75, min(1.15, brightness))
-            raw = ImageEnhance.Brightness(raw).enhance(brightness)
-            raw = ImageEnhance.Contrast(raw).enhance(1.2)
-            raw = ImageEnhance.Sharpness(raw).enhance(1.6)
+            raw = ImageOps.autocontrast(raw, cutoff=2)
 
-            # 3) Convert to 1-bit with error diffusion for smoother apparent tones.
-            image = raw.convert("1", dither=Image.FLOYDSTEINBERG)
-            print("[MAIN] After hours photo dithered successfully.", flush=True)
+            # Darken mid/high tones with gamma (>1.0 darkens) so photos don't wash out
+            # when converted to 1-bit on e-ink.
+            gamma = 1.35
+            gamma_lut = [int(((i / 255.0) ** gamma) * 255.0) for i in range(256)]
+            raw = raw.point(gamma_lut)
+            raw = ImageEnhance.Contrast(raw).enhance(1.35)
+            raw = ImageEnhance.Sharpness(raw).enhance(1.8)
+
+            # 3) Choose a brightness variant that lands near a healthy black-pixel
+            # ratio after dithering. This avoids "too light" output across varied photos.
+            target_black_ratio = 0.36
+            best_image = None
+            best_score = float("inf")
+            best_ratio = 0.0
+            best_brightness = 1.0
+            for brightness in (1.0, 0.92, 0.85, 0.78):
+                toned = ImageEnhance.Brightness(raw).enhance(brightness)
+                candidate = toned.convert("1", dither=Image.FLOYDSTEINBERG)
+                hist = candidate.histogram()
+                black_ratio = hist[0] / max(w * h, 1)
+                score = abs(black_ratio - target_black_ratio)
+                if black_ratio < 0.28:
+                    score += 0.15
+                if score < best_score:
+                    best_score = score
+                    best_image = candidate
+                    best_ratio = black_ratio
+                    best_brightness = brightness
+
+            image = best_image
+            print(
+                "[MAIN] After hours photo dithered successfully "
+                f"(black_ratio={best_ratio:.3f}, brightness={best_brightness:.2f}).",
+                flush=True,
+            )
         except Exception as exc:
             print(f"[MAIN] After hours photo load failed: {exc}", flush=True)
 
