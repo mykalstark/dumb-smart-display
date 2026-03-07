@@ -18,6 +18,7 @@ hardware:
     start: "22:00"
     end: "07:00"
     photo: ""          # filename of uploaded photo, e.g. "after_hours_photo.jpg"
+    render_mode: "1bit_floyd"  # 1bit_floyd | 1bit_bayer | 4gray
 
 # Shared location used by clock and weather_forecast modules.
 # Any module can override these with its own latitude/longitude keys.

@@ -354,6 +354,11 @@ hardware:
   rotation: 0              # 0 / 90 / 180 / 270
   driver: "epd7in5_V2"
   cycle_seconds: 30        # how long each module stays on screen
+  after_hours:
+    enabled: false
+    start: "22:00"
+    end: "07:00"
+    render_mode: "1bit_floyd"  # try 4gray on newer 7.5" V2 panels
 
 modules:
   enabled:

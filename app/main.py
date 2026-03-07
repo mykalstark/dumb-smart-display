@@ -6,7 +6,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict, Tuple
 
 import yaml
 from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageOps  # <--- Need this to load fonts
@@ -19,6 +19,17 @@ from app.display import Display
 DEFAULT_CONFIG_PATH = Path("config/config.yml")
 DEFAULT_CONFIG_FALLBACK = Path("config/config.example.yml")
 _UPLOADS_DIR = Path(__file__).parent / "webui" / "static" / "uploads"
+_AFTER_HOURS_RENDER_MODES = {"1bit_floyd", "1bit_bayer", "4gray"}
+_BAYER_8X8 = (
+    (0, 48, 12, 60, 3, 51, 15, 63),
+    (32, 16, 44, 28, 35, 19, 47, 31),
+    (8, 56, 4, 52, 11, 59, 7, 55),
+    (40, 24, 36, 20, 43, 27, 39, 23),
+    (2, 50, 14, 62, 1, 49, 13, 61),
+    (34, 18, 46, 30, 33, 17, 45, 29),
+    (10, 58, 6, 54, 9, 57, 5, 53),
+    (42, 26, 38, 22, 41, 25, 37, 21),
+)
 
 
 def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
@@ -134,60 +145,117 @@ def build_module_manager(config: Dict[str, Any], fonts: Dict[str, Any]) -> Modul
     return manager
 
 
+def _normalize_after_hours_render_mode(raw_mode: Any) -> str:
+    mode = str(raw_mode or "1bit_floyd").strip().lower()
+    return mode if mode in _AFTER_HOURS_RENDER_MODES else "1bit_floyd"
+
+
+def _prepare_after_hours_source(photo_path: Path, width: int, height: int) -> Image.Image:
+    # Normalize EXIF orientation first so phone photos land correctly on-panel.
+    raw = ImageOps.exif_transpose(Image.open(photo_path)).convert("L")
+    raw = ImageOps.fit(raw, (width, height), method=Image.LANCZOS, centering=(0.5, 0.5))
+    raw = ImageOps.autocontrast(raw, cutoff=2)
+
+    gamma = 1.35
+    gamma_lut = [int(((i / 255.0) ** gamma) * 255.0) for i in range(256)]
+    raw = raw.point(gamma_lut)
+    raw = ImageEnhance.Contrast(raw).enhance(1.35)
+    raw = ImageEnhance.Sharpness(raw).enhance(1.8)
+    return raw
+
+
+def _ordered_dither_1bit(image: Image.Image) -> Image.Image:
+    gray = image.convert("L")
+    out = Image.new("1", gray.size, 255)
+    src = gray.load()
+    dst = out.load()
+
+    # Ordered dithering is less directional than Floyd-Steinberg and can
+    # reduce visible streaking on photos with smooth gradients.
+    for y in range(gray.height):
+        row = _BAYER_8X8[y & 7]
+        for x in range(gray.width):
+            threshold = ((row[x & 7] + 0.5) * 255.0) / 64.0
+            dst[x, y] = 0 if src[x, y] < threshold else 255
+
+    return out
+
+
+def _select_best_monochrome_variant(
+    raw: Image.Image,
+    converter: Callable[[Image.Image], Image.Image],
+) -> Tuple[Image.Image, float, float]:
+    target_black_ratio = 0.36
+    best_image = None
+    best_score = float("inf")
+    best_ratio = 0.0
+    best_brightness = 1.0
+
+    for brightness in (1.0, 0.92, 0.85, 0.78):
+        toned = ImageEnhance.Brightness(raw).enhance(brightness)
+        candidate = converter(toned)
+        hist = candidate.histogram()
+        black_ratio = hist[0] / max(candidate.width * candidate.height, 1)
+        score = abs(black_ratio - target_black_ratio)
+        if black_ratio < 0.28:
+            score += 0.15
+        if score < best_score:
+            best_score = score
+            best_image = candidate
+            best_ratio = black_ratio
+            best_brightness = brightness
+
+    if best_image is None:
+        raise RuntimeError("Failed to prepare after-hours photo")
+
+    return best_image, best_ratio, best_brightness
+
+
+def _quantize_4gray(image: Image.Image) -> Image.Image:
+    return image.convert("L").point(
+        lambda x: 0x00 if x < 64 else 0x40 if x < 128 else 0x80 if x < 192 else 0xC0,
+        "L",
+    )
+
+
 def _render_after_hours(display: "Display", config: Dict[str, Any], fonts: Dict[str, Any]) -> None:
     """Render the after hours screen once (photo or fallback message)."""
     ah_cfg = config.get("hardware", {}).get("after_hours", {})
     photo_name = ah_cfg.get("photo", "")
+    requested_mode = _normalize_after_hours_render_mode(ah_cfg.get("render_mode"))
+    render_mode = requested_mode
     w, h = display.driver.width, display.driver.height
     image = None
 
     if photo_name:
         photo_path = _UPLOADS_DIR / photo_name
         try:
-            # 1) Normalize orientation from EXIF metadata, then convert to grayscale.
-            # This avoids rotated/sideways phone photos on the panel.
-            raw = ImageOps.exif_transpose(Image.open(photo_path)).convert("L")
-            raw = ImageOps.fit(raw, (w, h), method=Image.LANCZOS, centering=(0.5, 0.5))
+            raw = _prepare_after_hours_source(photo_path, w, h)
 
-            # 2) Auto-stretch tonal range and apply adaptive brightness targeting
-            # the mid-tones where 1-bit dithering looks best on the 7.5" V2 panel.
-            raw = ImageOps.autocontrast(raw, cutoff=2)
+            if render_mode == "4gray" and not display.supports_four_gray():
+                print(
+                    "[MAIN] 4-gray after hours mode requested, but the current "
+                    "driver/panel does not expose 4-gray support. Falling back to 1bit_floyd.",
+                    flush=True,
+                )
+                render_mode = "1bit_floyd"
 
-            # Darken mid/high tones with gamma (>1.0 darkens) so photos don't wash out
-            # when converted to 1-bit on e-ink.
-            gamma = 1.35
-            gamma_lut = [int(((i / 255.0) ** gamma) * 255.0) for i in range(256)]
-            raw = raw.point(gamma_lut)
-            raw = ImageEnhance.Contrast(raw).enhance(1.35)
-            raw = ImageEnhance.Sharpness(raw).enhance(1.8)
+            if render_mode == "4gray":
+                image = _quantize_4gray(raw)
+                print("[MAIN] After hours photo prepared in 4-gray mode.", flush=True)
+            else:
+                converter: Callable[[Image.Image], Image.Image]
+                if render_mode == "1bit_bayer":
+                    converter = _ordered_dither_1bit
+                else:
+                    converter = lambda toned: toned.convert("1", dither=Image.FLOYDSTEINBERG)
 
-            # 3) Choose a brightness variant that lands near a healthy black-pixel
-            # ratio after dithering. This avoids "too light" output across varied photos.
-            target_black_ratio = 0.36
-            best_image = None
-            best_score = float("inf")
-            best_ratio = 0.0
-            best_brightness = 1.0
-            for brightness in (1.0, 0.92, 0.85, 0.78):
-                toned = ImageEnhance.Brightness(raw).enhance(brightness)
-                candidate = toned.convert("1", dither=Image.FLOYDSTEINBERG)
-                hist = candidate.histogram()
-                black_ratio = hist[0] / max(w * h, 1)
-                score = abs(black_ratio - target_black_ratio)
-                if black_ratio < 0.28:
-                    score += 0.15
-                if score < best_score:
-                    best_score = score
-                    best_image = candidate
-                    best_ratio = black_ratio
-                    best_brightness = brightness
-
-            image = best_image
-            print(
-                "[MAIN] After hours photo dithered successfully "
-                f"(black_ratio={best_ratio:.3f}, brightness={best_brightness:.2f}).",
-                flush=True,
-            )
+                image, best_ratio, best_brightness = _select_best_monochrome_variant(raw, converter)
+                print(
+                    "[MAIN] After hours photo prepared successfully "
+                    f"(mode={render_mode}, black_ratio={best_ratio:.3f}, brightness={best_brightness:.2f}).",
+                    flush=True,
+                )
         except Exception as exc:
             print(f"[MAIN] After hours photo load failed: {exc}", flush=True)
 
@@ -205,10 +273,11 @@ def _render_after_hours(display: "Display", config: Dict[str, Any], fonts: Dict[
             draw.text(((w - tw) // 2, y), line, font=font, fill=0)
             y += line_h + 8
 
-    # Use render_image() directly (not render()) so the photo is full-bleed —
-    # render() always calls _add_border() which is correct for UI screens but
-    # adds an unwanted decorative frame around photos.
-    display.render_image(image, force_full_refresh=True)
+    # Use the dedicated photo path so the image stays full-bleed.
+    # render() always calls _add_border(), which is correct for UI screens
+    # but adds an unwanted decorative frame around photos.
+    actual_mode = display.render_photo(image, mode=render_mode)
+    print(f"[MAIN] After hours photo rendered with mode={actual_mode}.", flush=True)
 
 
 def main() -> None:

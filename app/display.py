@@ -33,6 +33,10 @@ class SimulatorDisplayDriver:
     def render_image(self, image: object, force_full_refresh: bool = False) -> None:
         print("[Display] Simulator received image object: %s (force_full=%s)" % (type(image), force_full_refresh))
 
+    def render_photo(self, image: object, mode: str = "1bit_floyd") -> str:
+        self.render_image(image, force_full_refresh=True)
+        return mode
+
 
 class HardwareDisplayDriver:
     def __init__(
@@ -92,6 +96,10 @@ class HardwareDisplayDriver:
             "[Display] Hardware driver initialized "
             f"(rotation={rotation}, driver={driver_name}, size={self.width}x{self.height})."
         )
+
+    def supports_four_gray(self) -> bool:
+        required = ("init_4Gray", "getbuffer_4Gray", "display_4Gray")
+        return all(callable(getattr(self.driver, name, None)) for name in required)
 
     def _detect_fast_display_method(self):
         candidates = [
@@ -162,6 +170,19 @@ class HardwareDisplayDriver:
         # Convert all other inputs to 1-bit via a stable threshold.
         return img.convert("L").point(lambda x: 0 if x < 128 else 255, "1")
 
+    def _prepare_four_gray_image(self, image: Image.Image) -> Image.Image:
+        target_size = (self.width, self.height)
+
+        if image.size != target_size:
+            img = image.resize(target_size, resample=Image.LANCZOS)
+        else:
+            img = image.copy()
+
+        if self.rotation:
+            img = img.rotate(self.rotation, expand=False, resample=Image.BICUBIC)
+
+        return img.convert("L")
+
     def render_text(self, text: str) -> None:
         image = Image.new("1", (self.width, self.height), 255)
         draw = ImageDraw.Draw(image)
@@ -208,6 +229,29 @@ class HardwareDisplayDriver:
             # Always put display to sleep to prevent burn-in/fading
             self.driver.sleep()
 
+    def render_photo(self, image: object, mode: str = "1bit_floyd") -> str:
+        if not isinstance(image, Image.Image):
+            raise TypeError("HardwareDisplayDriver expects a PIL.Image for render_photo")
+
+        normalized_mode = (mode or "1bit_floyd").lower()
+        if normalized_mode == "4gray" and self.supports_four_gray():
+            try:
+                init_4gray = getattr(self.driver, "init_4Gray")
+                getbuffer_4gray = getattr(self.driver, "getbuffer_4Gray")
+                display_4gray = getattr(self.driver, "display_4Gray")
+
+                init_4gray()
+                prepared = self._prepare_four_gray_image(image)
+                buffer = getbuffer_4gray(prepared)
+                display_4gray(buffer)
+                self._refresh_counter = 0
+                return "4gray"
+            finally:
+                self.driver.sleep()
+
+        self.render_image(image, force_full_refresh=True)
+        return normalized_mode
+
 
 class Display:
     def __init__(
@@ -253,6 +297,18 @@ class Display:
 
     def render_image(self, image: object, force_full_refresh: bool = False) -> None:
         self.driver.render_image(image, force_full_refresh=force_full_refresh)
+
+    def render_photo(self, image: Image.Image, mode: str = "1bit_floyd") -> str:
+        render_photo = getattr(self.driver, "render_photo", None)
+        if callable(render_photo):
+            return str(render_photo(image, mode=mode))
+
+        self.render_image(image, force_full_refresh=True)
+        return mode
+
+    def supports_four_gray(self) -> bool:
+        checker = getattr(self.driver, "supports_four_gray", None)
+        return bool(callable(checker) and checker())
 
     def _render_text_image(self, text: str) -> Image.Image:
         width = getattr(self.driver, "width", 800)

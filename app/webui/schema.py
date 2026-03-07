@@ -139,6 +139,17 @@ AFTER_HOURS_SCHEMA: SectionSchema = {
             "type": "time_of_day",
             "help": "When after hours mode ends each morning.",
         },
+        {
+            "key": "render_mode",
+            "label": "Photo Render Mode",
+            "type": "select",
+            "options": [
+                {"value": "1bit_floyd", "label": "1-bit Floyd-Steinberg"},
+                {"value": "1bit_bayer", "label": "1-bit Ordered Dither"},
+                {"value": "4gray", "label": "4-gray (newer 7.5 V2 panels)"},
+            ],
+            "help": "Choose how photos are converted for the panel. 4-gray can look much better, but older 7.5 V2 panels may only support 1-bit modes.",
+        },
     ],
 }
 
