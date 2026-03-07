@@ -152,17 +152,30 @@ def _normalize_after_hours_render_mode(raw_mode: Any) -> str:
     return mode if mode in _AFTER_HOURS_RENDER_MODES else "1bit_floyd"
 
 
-def _prepare_after_hours_source(photo_path: Path, width: int, height: int) -> Image.Image:
+def _prepare_after_hours_source(
+    photo_path: Path,
+    width: int,
+    height: int,
+    render_mode: str = "1bit_floyd",
+) -> Image.Image:
     # Normalize EXIF orientation first so phone photos land correctly on-panel.
     raw = ImageOps.exif_transpose(Image.open(photo_path)).convert("L")
     raw = ImageOps.fit(raw, (width, height), method=Image.LANCZOS, centering=(0.5, 0.5))
-    raw = ImageOps.autocontrast(raw, cutoff=2)
+    raw = ImageOps.autocontrast(raw, cutoff=1 if render_mode == "4gray" else 2)
 
-    gamma = 1.35
+    if render_mode == "4gray":
+        gamma = 0.92
+        contrast = 1.18
+        sharpness = 1.45
+    else:
+        gamma = 1.35
+        contrast = 1.35
+        sharpness = 1.8
+
     gamma_lut = [int(((i / 255.0) ** gamma) * 255.0) for i in range(256)]
     raw = raw.point(gamma_lut)
-    raw = ImageEnhance.Contrast(raw).enhance(1.35)
-    raw = ImageEnhance.Sharpness(raw).enhance(1.8)
+    raw = ImageEnhance.Contrast(raw).enhance(contrast)
+    raw = ImageEnhance.Sharpness(raw).enhance(sharpness)
     return raw
 
 
@@ -215,9 +228,53 @@ def _select_best_monochrome_variant(
 
 def _quantize_4gray(image: Image.Image) -> Image.Image:
     return image.convert("L").point(
-        lambda x: 0x00 if x < 64 else 0x40 if x < 128 else 0x80 if x < 192 else 0xC0,
+        # Waveshare's 4-gray driver expects GRAY4/3/2/1 = 0x00/0x80/0xC0/0xFF.
+        lambda x: 0x00 if x < 64 else 0x80 if x < 128 else 0xC0 if x < 192 else 0xFF,
         "L",
     )
+
+
+def _select_best_four_gray_variant(raw: Image.Image) -> Tuple[Image.Image, float, float, float]:
+    target_mean_luma = 182.0
+    best_image = None
+    best_score = float("inf")
+    best_mean = 0.0
+    best_brightness = 1.0
+    best_white_ratio = 0.0
+    total_pixels = max(raw.width * raw.height, 1)
+
+    for brightness in (1.0, 1.08, 1.16, 1.24, 1.32):
+        toned = ImageEnhance.Brightness(raw).enhance(brightness)
+        candidate = _quantize_4gray(toned)
+        hist = candidate.histogram()
+        black_count = hist[0]
+        dark_gray_count = hist[0x80]
+        light_gray_count = hist[0xC0]
+        white_count = hist[0xFF]
+        mean_luma = (
+            (0 * black_count)
+            + (128 * dark_gray_count)
+            + (192 * light_gray_count)
+            + (255 * white_count)
+        ) / total_pixels
+        white_ratio = white_count / total_pixels
+        black_ratio = black_count / total_pixels
+        score = abs(mean_luma - target_mean_luma) / 255.0
+        if white_ratio < 0.18:
+            score += 0.08
+        if black_ratio > 0.18:
+            score += 0.08
+        if score < best_score:
+            best_score = score
+            best_image = candidate
+            best_mean = mean_luma
+            best_brightness = brightness
+            best_white_ratio = white_ratio
+
+    if best_image is None:
+        raise RuntimeError("Failed to prepare 4-gray after-hours photo")
+
+    return best_image, best_mean, best_brightness, best_white_ratio
 
 
 def _render_after_hours(display: "Display", config: Dict[str, Any], fonts: Dict[str, Any]) -> None:
@@ -232,8 +289,6 @@ def _render_after_hours(display: "Display", config: Dict[str, Any], fonts: Dict[
     if photo_name:
         photo_path = _UPLOADS_DIR / photo_name
         try:
-            raw = _prepare_after_hours_source(photo_path, w, h)
-
             if render_mode == "4gray" and not display.supports_four_gray():
                 print(
                     "[MAIN] 4-gray after hours mode requested, but the current "
@@ -243,9 +298,15 @@ def _render_after_hours(display: "Display", config: Dict[str, Any], fonts: Dict[
                 render_mode = "1bit_floyd"
 
             if render_mode == "4gray":
-                image = _quantize_4gray(raw)
-                print("[MAIN] After hours photo prepared in 4-gray mode.", flush=True)
+                raw = _prepare_after_hours_source(photo_path, w, h, render_mode="4gray")
+                image, mean_luma, best_brightness, white_ratio = _select_best_four_gray_variant(raw)
+                print(
+                    "[MAIN] After hours photo prepared in 4-gray mode "
+                    f"(mean_luma={mean_luma:.1f}, brightness={best_brightness:.2f}, white_ratio={white_ratio:.3f}).",
+                    flush=True,
+                )
             else:
+                raw = _prepare_after_hours_source(photo_path, w, h, render_mode=render_mode)
                 converter: Callable[[Image.Image], Image.Image]
                 if render_mode == "1bit_bayer":
                     converter = _ordered_dither_1bit

@@ -29,6 +29,7 @@ from app.main import (  # noqa: E402
     _ordered_dither_1bit,
     _prepare_after_hours_source,
     _quantize_4gray,
+    _select_best_four_gray_variant,
     build_display,
     load_config,
 )
@@ -116,9 +117,10 @@ def _gradient_4gray(width: int, height: int) -> Image.Image:
 
 def _photo_factory(photo_path: Path, mode: str) -> Callable[[int, int], Image.Image]:
     def factory(width: int, height: int) -> Image.Image:
-        prepared = _prepare_after_hours_source(photo_path, width, height)
+        prepared = _prepare_after_hours_source(photo_path, width, height, render_mode=mode)
         if mode == "4gray":
-            return _quantize_4gray(prepared)
+            image, _, _, _ = _select_best_four_gray_variant(prepared)
+            return image
         if mode == "1bit_bayer":
             return _ordered_dither_1bit(prepared)
         return prepared.convert("1", dither=Image.FLOYDSTEINBERG)
