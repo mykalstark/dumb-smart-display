@@ -352,7 +352,7 @@ location:
 hardware:
   simulate: false          # true = render to terminal, no screen required
   rotation: 0              # 0 / 90 / 180 / 270
-  driver: "epd7in5_V2"     # match this to your panel generation
+  driver: "epd7in5_V2"     # pre-Sep 2023 800x480 panels should use epd7in5_V2_old
   spi_hz: 4000000          # lower to 2000000 or 1000000 for signal-integrity issues
   cycle_seconds: 30        # how long each module stays on screen
   after_hours:
