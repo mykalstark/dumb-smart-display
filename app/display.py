@@ -45,11 +45,13 @@ class HardwareDisplayDriver:
         driver_name: str = "epd7in5_V2",
         library_path: Optional[str] = None,
         pin_config: Optional[Dict[str, int]] = None,
+        spi_hz: Optional[int] = None,
     ) -> None:
         self.rotation = rotation
         self.driver_name = driver_name
         self.pin_config = pin_config or {}
         self.library_path = library_path
+        self.spi_hz = int(spi_hz) if spi_hz else None
 
         self._ensure_library_path()
 
@@ -73,6 +75,7 @@ class HardwareDisplayDriver:
             print("[Display] Initializing driver...")
             # This will open the pins defined in epdconfig.py
             self.driver.init()
+            self._apply_runtime_overrides()
             
             # Explicitly clear the display on boot to prevent ghosting from previous sessions
             print("[Display] Clearing display...")
@@ -147,6 +150,21 @@ class HardwareDisplayDriver:
                 if hasattr(self.epdconfig, attr) and getattr(self.epdconfig, attr) != val:
                     setattr(self.epdconfig, attr, val)
 
+    def _apply_runtime_overrides(self) -> None:
+        if not self.spi_hz:
+            return
+
+        implementation = getattr(self.epdconfig, "implementation", None)
+        spi = getattr(implementation, "SPI", None)
+        if spi is None:
+            return
+
+        try:
+            spi.max_speed_hz = self.spi_hz
+            print(f"[Display] SPI clock set to {self.spi_hz} Hz.")
+        except Exception as exc:
+            print(f"[Display] Failed to override SPI clock: {exc}")
+
     def _prepare_image(self, image: Image.Image) -> Image.Image:
         target_size = (self.width, self.height)
 
@@ -203,6 +221,7 @@ class HardwareDisplayDriver:
         try:
             # Wake up the display
             self.driver.init()
+            self._apply_runtime_overrides()
 
             prepared = self._prepare_image(image)
             buffer = self.driver.getbuffer(prepared)
@@ -241,6 +260,7 @@ class HardwareDisplayDriver:
                 display_4gray = getattr(self.driver, "display_4Gray")
 
                 init_4gray()
+                self._apply_runtime_overrides()
                 prepared = self._prepare_four_gray_image(image)
                 buffer = getbuffer_4gray(prepared)
                 display_4gray(buffer)
@@ -262,12 +282,14 @@ class Display:
         driver_name: str = "epd7in5_V2",
         library_path: Optional[str] = None,
         pin_config: Optional[Dict[str, int]] = None,
+        spi_hz: Optional[int] = None,
     ):
         self.simulate = simulate
         self.rotation = rotation
         self.driver_name = driver_name
         self.library_path = library_path
         self.pin_config = pin_config
+        self.spi_hz = spi_hz
         self.driver: DisplayDriver = driver or self._select_driver()
 
     def _select_driver(self) -> DisplayDriver:
@@ -278,6 +300,7 @@ class Display:
             driver_name=self.driver_name,
             library_path=self.library_path,
             pin_config=self.pin_config,
+            spi_hz=self.spi_hz,
         )
 
     def render(self, content: object, force_full_refresh: bool = False) -> None:

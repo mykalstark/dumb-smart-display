@@ -352,7 +352,8 @@ location:
 hardware:
   simulate: false          # true = render to terminal, no screen required
   rotation: 0              # 0 / 90 / 180 / 270
-  driver: "epd7in5_V2"
+  driver: "epd7in5_V2"     # older panels may need epd7in5_V2_old if available
+  spi_hz: 4000000          # lower to 2000000 or 1000000 for signal-integrity issues
   cycle_seconds: 30        # how long each module stays on screen
   after_hours:
     enabled: false
@@ -477,6 +478,12 @@ journalctl -u dumb-smart-display -f
 **Test display hardware directly:**
 ```bash
 ./scripts/display_test.sh
+```
+
+**Diagnose banding / column artifacts:**
+```bash
+python3 scripts/panel_diagnostics.py --pause 8
+python3 scripts/panel_diagnostics.py --spi-hz 2000000 --pause 8
 ```
 
 **Web UI not reachable:**

@@ -2,8 +2,9 @@
 hardware:
   simulate: false  # Set to true to force simulator mode
   rotation: 0
-  driver: "epd7in5_V2"  # 7.5" V2 black/white panel
+  driver: "epd7in5_V2"  # Older panels may need epd7in5_V2_old if your library provides it
   library_path: "./lib"  # Where install.sh places waveshare_epd
+  spi_hz: 4000000      # Lower to 2000000 or 1000000 if you see column corruption/banding
   pins:
     rst: 5    # Reset -> GPIO5 (Pin 29)
     dc: 25    # Data/Command -> GPIO25 (Pin 22)

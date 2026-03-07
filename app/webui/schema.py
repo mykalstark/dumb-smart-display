@@ -107,6 +107,21 @@ HARDWARE_SCHEMA: SectionSchema = {
             "help": "Physical orientation of the panel.",
         },
         {
+            "key": "driver",
+            "label": "Driver Module",
+            "type": "text",
+            "help": "Advanced. Usually epd7in5_V2. Older 7.5-inch V2 panels may require epd7in5_V2_old if your Waveshare library includes it.",
+            "placeholder": "epd7in5_V2",
+        },
+        {
+            "key": "spi_hz",
+            "label": "SPI Clock (Hz)",
+            "type": "number",
+            "help": "Advanced. Lower this to 2000000 or 1000000 if the panel shows corrupted columns, vertical banding, or offset images.",
+            "min": 100000,
+            "placeholder": "4000000",
+        },
+        {
             "key": "simulate",
             "label": "Simulator Mode",
             "type": "toggle",

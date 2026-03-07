@@ -105,6 +105,7 @@ def build_display(config: Dict[str, Any], force_simulate: bool) -> Display:
     rotation = int(hardware_cfg.get("rotation", 0))
     driver_name = hardware_cfg.get("driver", "epd7in5_V2")
     library_path = hardware_cfg.get("library_path")
+    spi_hz = hardware_cfg.get("spi_hz")
     pins_cfg = hardware_cfg.get("pins") or {}
     pin_config = {key: int(value) for key, value in pins_cfg.items()}
     return Display(
@@ -113,6 +114,7 @@ def build_display(config: Dict[str, Any], force_simulate: bool) -> Display:
         driver_name=driver_name,
         library_path=library_path,
         pin_config=pin_config,
+        spi_hz=int(spi_hz) if spi_hz else None,
     )
 
 # <--- UPDATED: Accepts fonts
