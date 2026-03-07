@@ -30,6 +30,7 @@ from app.main import (  # noqa: E402
     _prepare_after_hours_source,
     _quantize_4gray,
     _select_best_four_gray_variant,
+    _select_best_monochrome_variant,
     _stochastic_dither_1bit,
     build_display,
     load_config,
@@ -122,10 +123,27 @@ def _photo_factory(photo_path: Path, mode: str) -> Callable[[int, int], Image.Im
         if mode == "4gray":
             image, _, _, _ = _select_best_four_gray_variant(prepared)
             return image
+        if mode == "1bit_floyd":
+            image, _, _ = _select_best_monochrome_variant(
+                prepared,
+                lambda toned: toned.convert("1", dither=Image.FLOYDSTEINBERG),
+                render_mode=mode,
+            )
+            return image
         if mode == "1bit_bayer":
-            return _ordered_dither_1bit(prepared)
+            image, _, _ = _select_best_monochrome_variant(
+                prepared,
+                _ordered_dither_1bit,
+                render_mode=mode,
+            )
+            return image
         if mode == "1bit_stochastic":
-            return _stochastic_dither_1bit(prepared)
+            image, _, _ = _select_best_monochrome_variant(
+                prepared,
+                _stochastic_dither_1bit,
+                render_mode=mode,
+            )
+            return image
         return prepared.convert("1", dither=Image.FLOYDSTEINBERG)
 
     return factory

@@ -230,21 +230,33 @@ def _stochastic_dither_1bit(image: Image.Image) -> Image.Image:
 def _select_best_monochrome_variant(
     raw: Image.Image,
     converter: Callable[[Image.Image], Image.Image],
+    render_mode: str = "1bit_floyd",
 ) -> Tuple[Image.Image, float, float]:
-    target_black_ratio = 0.36
+    if render_mode == "1bit_stochastic":
+        target_black_ratio = 0.30
+        brightness_candidates = (1.18, 1.10, 1.02, 0.94)
+    elif render_mode == "1bit_bayer":
+        target_black_ratio = 0.32
+        brightness_candidates = (1.14, 1.06, 0.98, 0.90)
+    else:
+        target_black_ratio = 0.33
+        brightness_candidates = (1.10, 1.02, 0.94, 0.86)
+
     best_image = None
     best_score = float("inf")
     best_ratio = 0.0
     best_brightness = 1.0
 
-    for brightness in (1.0, 0.92, 0.85, 0.78):
+    for brightness in brightness_candidates:
         toned = ImageEnhance.Brightness(raw).enhance(brightness)
         candidate = converter(toned)
         hist = candidate.histogram()
         black_ratio = hist[0] / max(candidate.width * candidate.height, 1)
         score = abs(black_ratio - target_black_ratio)
-        if black_ratio < 0.28:
-            score += 0.15
+        if black_ratio < 0.22:
+            score += 0.08
+        if black_ratio > 0.40:
+            score += 0.10
         if score < best_score:
             best_score = score
             best_image = candidate
@@ -346,7 +358,11 @@ def _render_after_hours(display: "Display", config: Dict[str, Any], fonts: Dict[
                 else:
                     converter = lambda toned: toned.convert("1", dither=Image.FLOYDSTEINBERG)
 
-                image, best_ratio, best_brightness = _select_best_monochrome_variant(raw, converter)
+                image, best_ratio, best_brightness = _select_best_monochrome_variant(
+                    raw,
+                    converter,
+                    render_mode=render_mode,
+                )
                 print(
                     "[MAIN] After hours photo prepared successfully "
                     f"(mode={render_mode}, black_ratio={best_ratio:.3f}, brightness={best_brightness:.2f}).",

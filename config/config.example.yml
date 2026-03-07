@@ -2,7 +2,7 @@
 hardware:
   simulate: false  # Set to true to force simulator mode
   rotation: 0
-  driver: "epd7in5_V2"  # Pre-Sep 2023 800x480 7.5" panels should use epd7in5_V2_old
+  driver: "epd7in5_V2"  # Start here for 800x480 7.5" panels; only try epd7in5_V2_old if V2 shows artifacts
   library_path: "./lib"  # Where install.sh places waveshare_epd
   spi_hz: 4000000      # Lower to 2000000 or 1000000 if you see column corruption/banding
   pins:

@@ -110,7 +110,7 @@ HARDWARE_SCHEMA: SectionSchema = {
             "key": "driver",
             "label": "Driver Module",
             "type": "text",
-            "help": "Advanced. Match this to the actual panel generation. For 800x480 7.5-inch panels bought before September 2023, Waveshare says to use epd7in5_V2_old; newer units use epd7in5_V2.",
+            "help": "Advanced. For 800x480 7.5-inch panels, start with epd7in5_V2. Only try epd7in5_V2_old if V2 shows obvious artifacts. Actual on-device rendering matters more than product-page dates.",
             "placeholder": "epd7in5_V2",
         },
         {
