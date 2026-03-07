@@ -2,7 +2,7 @@
 hardware:
   simulate: false  # Set to true to force simulator mode
   rotation: 0
-  driver: "epd7in5_V2"  # Older panels may need epd7in5_V2_old if your library provides it
+  driver: "epd7in5_V2"  # Match this to your panel generation; older 2-gray 7.5" panels may need a different driver
   library_path: "./lib"  # Where install.sh places waveshare_epd
   spi_hz: 4000000      # Lower to 2000000 or 1000000 if you see column corruption/banding
   pins:
@@ -19,7 +19,7 @@ hardware:
     start: "22:00"
     end: "07:00"
     photo: ""          # filename of uploaded photo, e.g. "after_hours_photo.jpg"
-    render_mode: "1bit_floyd"  # 1bit_floyd | 1bit_bayer | 4gray
+    render_mode: "1bit_floyd"  # 1bit_floyd | 1bit_bayer | 1bit_stochastic | 4gray
 
 # Shared location used by clock and weather_forecast modules.
 # Any module can override these with its own latitude/longitude keys.

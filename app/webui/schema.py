@@ -110,7 +110,7 @@ HARDWARE_SCHEMA: SectionSchema = {
             "key": "driver",
             "label": "Driver Module",
             "type": "text",
-            "help": "Advanced. Usually epd7in5_V2. Older 7.5-inch V2 panels may require epd7in5_V2_old if your Waveshare library includes it.",
+            "help": "Advanced. Match this to the actual panel generation. Newer 7.5-inch V2 panels usually use epd7in5_V2; older 2-gray panels may need a different Waveshare driver module.",
             "placeholder": "epd7in5_V2",
         },
         {
@@ -161,9 +161,10 @@ AFTER_HOURS_SCHEMA: SectionSchema = {
             "options": [
                 {"value": "1bit_floyd", "label": "1-bit Floyd-Steinberg"},
                 {"value": "1bit_bayer", "label": "1-bit Ordered Dither"},
-                {"value": "4gray", "label": "4-gray (newer 7.5 V2 panels)"},
+                {"value": "1bit_stochastic", "label": "1-bit Stochastic (2-gray panels)"},
+                {"value": "4gray", "label": "4-gray (post-2023 7.5 V2 only)"},
             ],
-            "help": "Choose how photos are converted for the panel. 4-gray can look much better, but older 7.5 V2 panels may only support 1-bit modes.",
+            "help": "Choose how photos are converted for the panel. Use a 1-bit mode for older black/white 2-gray panels. Only use 4-gray on newer 7.5-inch V2 panels that explicitly support it.",
         },
     ],
 }

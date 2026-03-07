@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Tuple
 
 import yaml
-from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageOps  # <--- Need this to load fonts
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps  # <--- Need this to load fonts
 
 from app.buttons import init_buttons
 from app.core.module_manager import ModuleManager
@@ -19,7 +19,7 @@ from app.display import Display
 DEFAULT_CONFIG_PATH = Path("config/config.yml")
 DEFAULT_CONFIG_FALLBACK = Path("config/config.example.yml")
 _UPLOADS_DIR = Path(__file__).parent / "webui" / "static" / "uploads"
-_AFTER_HOURS_RENDER_MODES = {"1bit_floyd", "1bit_bayer", "4gray"}
+_AFTER_HOURS_RENDER_MODES = {"1bit_floyd", "1bit_bayer", "1bit_stochastic", "4gray"}
 _BAYER_8X8 = (
     (0, 48, 12, 60, 3, 51, 15, 63),
     (32, 16, 44, 28, 35, 19, 47, 31),
@@ -161,19 +161,28 @@ def _prepare_after_hours_source(
     # Normalize EXIF orientation first so phone photos land correctly on-panel.
     raw = ImageOps.exif_transpose(Image.open(photo_path)).convert("L")
     raw = ImageOps.fit(raw, (width, height), method=Image.LANCZOS, centering=(0.5, 0.5))
-    raw = ImageOps.autocontrast(raw, cutoff=1 if render_mode == "4gray" else 2)
+    raw = ImageOps.autocontrast(raw, cutoff=1 if render_mode in {"4gray", "1bit_stochastic"} else 2)
 
     if render_mode == "4gray":
         gamma = 0.92
         contrast = 1.18
         sharpness = 1.45
+        blur_radius = 0.0
+    elif render_mode == "1bit_stochastic":
+        gamma = 1.02
+        contrast = 1.12
+        sharpness = 1.05
+        blur_radius = 0.65
     else:
         gamma = 1.35
         contrast = 1.35
         sharpness = 1.8
+        blur_radius = 0.0
 
     gamma_lut = [int(((i / 255.0) ** gamma) * 255.0) for i in range(256)]
     raw = raw.point(gamma_lut)
+    if blur_radius > 0.0:
+        raw = raw.filter(ImageFilter.GaussianBlur(radius=blur_radius))
     raw = ImageEnhance.Contrast(raw).enhance(contrast)
     raw = ImageEnhance.Sharpness(raw).enhance(sharpness)
     return raw
@@ -192,6 +201,28 @@ def _ordered_dither_1bit(image: Image.Image) -> Image.Image:
         for x in range(gray.width):
             threshold = ((row[x & 7] + 0.5) * 255.0) / 64.0
             dst[x, y] = 0 if src[x, y] < threshold else 255
+
+    return out
+
+
+def _stochastic_dither_1bit(image: Image.Image) -> Image.Image:
+    gray = image.convert("L")
+    out = Image.new("1", gray.size, 255)
+    src = gray.load()
+    dst = out.load()
+
+    # Add deterministic midtone noise before thresholding. On 2-gray panels this
+    # often breaks up long smooth contours that otherwise show up as visible bands.
+    for y in range(gray.height):
+        for x in range(gray.width):
+            px = src[x, y]
+            seed = (x * 374761393 + y * 668265263 + 0x9E3779B9) & 0xFFFFFFFF
+            seed ^= seed >> 13
+            seed = (seed * 1274126177) & 0xFFFFFFFF
+            noise = (((seed >> 24) & 0xFF) - 127.5) / 127.5
+            midtone_weight = 1.0 - abs(px - 127.5) / 127.5
+            threshold = 127.5 + noise * 26.0 * max(midtone_weight, 0.0)
+            dst[x, y] = 0 if px < threshold else 255
 
     return out
 
@@ -310,6 +341,8 @@ def _render_after_hours(display: "Display", config: Dict[str, Any], fonts: Dict[
                 converter: Callable[[Image.Image], Image.Image]
                 if render_mode == "1bit_bayer":
                     converter = _ordered_dither_1bit
+                elif render_mode == "1bit_stochastic":
+                    converter = _stochastic_dither_1bit
                 else:
                     converter = lambda toned: toned.convert("1", dither=Image.FLOYDSTEINBERG)
 

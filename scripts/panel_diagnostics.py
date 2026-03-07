@@ -30,6 +30,7 @@ from app.main import (  # noqa: E402
     _prepare_after_hours_source,
     _quantize_4gray,
     _select_best_four_gray_variant,
+    _stochastic_dither_1bit,
     build_display,
     load_config,
 )
@@ -123,6 +124,8 @@ def _photo_factory(photo_path: Path, mode: str) -> Callable[[int, int], Image.Im
             return image
         if mode == "1bit_bayer":
             return _ordered_dither_1bit(prepared)
+        if mode == "1bit_stochastic":
+            return _stochastic_dither_1bit(prepared)
         return prepared.convert("1", dither=Image.FLOYDSTEINBERG)
 
     return factory
@@ -138,6 +141,7 @@ def _build_patterns(photo_path: Optional[Path], supports_four_gray: bool) -> Lis
         ("checkerboard-8px", _checkerboard(8), "1bit_floyd"),
         ("gradient-floyd", _gradient_floyd, "1bit_floyd"),
         ("gradient-bayer", _gradient_bayer, "1bit_bayer"),
+        ("gradient-stochastic", lambda w, h: _stochastic_dither_1bit(_horizontal_gradient(w, h)), "1bit_stochastic"),
     ]
 
     if supports_four_gray:
@@ -146,6 +150,7 @@ def _build_patterns(photo_path: Optional[Path], supports_four_gray: bool) -> Lis
     if photo_path:
         patterns.append(("photo-floyd", _photo_factory(photo_path, "1bit_floyd"), "1bit_floyd"))
         patterns.append(("photo-bayer", _photo_factory(photo_path, "1bit_bayer"), "1bit_bayer"))
+        patterns.append(("photo-stochastic", _photo_factory(photo_path, "1bit_stochastic"), "1bit_stochastic"))
         if supports_four_gray:
             patterns.append(("photo-4gray", _photo_factory(photo_path, "4gray"), "4gray"))
 
