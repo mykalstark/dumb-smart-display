@@ -433,23 +433,28 @@ class Module(BaseDisplayModule):
             draw.text(((width - tw) // 2, (height - th) // 2), msg, font=default_font, fill=0)
             return image
 
-        # --- Fixed layout zones (px) ---
+        # --- Dynamic layout zones (px) ---
         HEADER_H  = PAGE_HEADER_H   # styled header bar
-        TOP_PAD   = 8    # space above day name
-        DAY_H     = 58   # zone for large day-name text
-        GAP1      = 6    # gap: day name → icon
-        ICON_H    = 140  # zone for weather icon glyph / PIL drawing
-        GAP2      = 6    # gap: icon → date
-        DATE_H    = 24   # zone for date number
-        GAP3      = 4    # gap: date → separator
-        SEP_H     = 1    # separator line
-        GAP4      = 4    # gap: separator → high temp
-        HIGH_H    = 46   # zone for high temperature
-        GAP5      = 4    # gap: high → low
-        LOW_H     = 28   # zone for low temperature
-        GAP6      = 4    # gap: low → precip
-        PRECIP_H  = 18   # zone for precipitation (only drawn when non-zero)
-        BOT_PAD   = 8    # space below last row
+        
+        # Calculate column dimensions dynamically based on available width and number of days
+        n_days      = len(self._days)
+        col_w       = max(80, width // n_days)  # Ensure minimum column width
+        
+        TOP_PAD     = max(10, col_w // 10)    # space above day name
+        DAY_H       = min(75, max(40, col_w // 2))   # zone for large day-name text - scale with column width
+        GAP1        = max(8, col_w // 12)     # gap: day name → icon
+        ICON_H      = min(160, max(90, col_w * 3 // 4))  # zone for weather icon glyph / PIL drawing - scale with column width
+        GAP2        = max(8, col_w // 12)     # gap: icon → date
+        DATE_H      = max(25, col_w // 6)     # zone for date number - scale with column width
+        GAP3        = max(6, col_w // 14)     # gap: date → separator
+        SEP_H       = 1                       # separator line
+        GAP4        = max(6, col_w // 14)     # gap: separator → high temp
+        HIGH_H      = max(35, col_w // 2)     # zone for high temperature - scale with column width
+        GAP5        = max(6, col_w // 14)     # gap: high → low
+        LOW_H       = max(25, col_w // 3)     # zone for low temperature - scale with column width
+        GAP6        = max(6, col_w // 14)     # gap: low → precip
+        PRECIP_H    = max(18, col_w // 5)     # zone for precipitation (only drawn when non-zero)
+        BOT_PAD     = max(10, col_w // 10)    # space below last row
 
         col_content_h = (
             TOP_PAD + DAY_H + GAP1 + ICON_H + GAP2
@@ -457,18 +462,22 @@ class Module(BaseDisplayModule):
             + HIGH_H + GAP5 + LOW_H + GAP6 + PRECIP_H + BOT_PAD
         )
 
-        # Fonts
-        n_days      = len(self._days)
-        col_w       = width // n_days
+        # Fonts - scale based on available column width
         day_font    = self._load_day_font(col_w)
-        date_font   = self._load_font(18)
-        high_font   = self._load_font(30)
-        low_font    = self._load_font(20)
-        precip_font = self._load_font(14)
+        
+        date_size   = min(18, max(12, col_w // 14))
+        high_size   = min(30, max(18, col_w // 9))
+        low_size    = min(20, max(14, col_w // 13))
+        precip_size = min(14, max(11, col_w // 17))
+        
+        date_font   = self._load_font(date_size)
+        high_font   = self._load_font(high_size)
+        low_font    = self._load_font(low_size)
+        precip_font = self._load_font(precip_size)
 
         # Icon font (Weather Icons TTF); None triggers PIL fallback
-        # Cap to column width minus 8px padding per side so glyphs stay inside their column
-        ICON_FONT_SIZE = min(130, col_w - 16)
+        # Scale icon font size based on column width and icon zone height
+        ICON_FONT_SIZE = min(ICON_H - 20, col_w - 24)
         icon_font = self._load_icon_font(ICON_FONT_SIZE)
 
         # --- Header ---
@@ -481,7 +490,7 @@ class Module(BaseDisplayModule):
         v_offset = max((body_h - col_content_h) // 2, 0)
 
         # Fallback PIL icon size fits in the icon zone and column width
-        pil_icon_size = min(ICON_H - 10, col_w - 20)
+        pil_icon_size = min(ICON_H - 18, col_w - 28)
 
         for i, day in enumerate(self._days):
             x0 = i * col_w
