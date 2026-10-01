@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
 
 from app.buttons import init_buttons
 from app.core.module_manager import ModuleManager
+from app.core.theme import OUTER_PAD, draw_text_block
 from app.display import Display
 
 
@@ -376,14 +377,9 @@ def _render_after_hours(display: "Display", config: Dict[str, Any], fonts: Dict[
         image = Image.new("1", (w, h), 255)
         draw = ImageDraw.Draw(image)
         font = fonts.get("default")
-        lines = ["After Hours", "No photo configured"]
-        line_h = draw.textbbox((0, 0), lines[0], font=font)[3]
-        total_h = line_h * len(lines) + 8 * (len(lines) - 1)
-        y = (h - total_h) // 2
-        for line in lines:
-            tw = draw.textbbox((0, 0), line, font=font)[2]
-            draw.text(((w - tw) // 2, y), line, font=font, fill=0)
-            y += line_h + 8
+        mid = h // 2
+        draw_text_block(draw, (OUTER_PAD, mid - 40, w - OUTER_PAD, mid), "After Hours", font)
+        draw_text_block(draw, (OUTER_PAD, mid + 8, w - OUTER_PAD, mid + 48), "No photo configured", font)
 
     # Use the dedicated photo path so the image stays full-bleed.
     # render() always calls _add_border(), which is correct for UI screens

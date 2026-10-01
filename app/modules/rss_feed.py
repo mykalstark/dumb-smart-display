@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 
 from PIL import Image, ImageDraw
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
-from app.core.theme import OUTER_PAD, PAGE_HEADER_H, draw_page_header, fit_header_font
+from app.core.theme import (
+    LINE_SPACING, draw_text_block, draw_message, page_body, get_text_size,
+    ellipsize,
+)
 
 log = logging.getLogger(__name__)
 
@@ -107,23 +110,14 @@ class Module(BaseDisplayModule):
     # ------------------------------------------------------------------
     # Render helpers
     # ------------------------------------------------------------------
-    def _get_text_size(self, draw: ImageDraw.ImageDraw, text: str, font: Any) -> Tuple[int, int]:
-        bbox = draw.textbbox((0, 0), text, font=font)
-        return bbox[2] - bbox[0], bbox[3] - bbox[1]
-
     def _total_pages(self) -> int:
         if not self._items or self._items_per_page <= 0:
             return 0
         return max(1, -(-len(self._items) // self._items_per_page))  # ceiling div
 
-    def _draw_centered(self, draw: ImageDraw.ImageDraw, width: int, height: int, text: str) -> None:
-        font = self.fonts.get("default")
-        tw, th = self._get_text_size(draw, text, font)
-        draw.text(((width - tw) // 2, (height - th) // 2), text, font=font, fill=0)
+    def _draw_centered(self, draw, width, height, text):
+        draw_message(draw, width, height, text, self.fonts.get("default"))
 
-    # ------------------------------------------------------------------
-    # Render
-    # ------------------------------------------------------------------
     def render(self, width: int = 800, height: int = 480, **kwargs: Any) -> Image.Image:
         if self._last_fetch is None:
             self.tick()
@@ -139,69 +133,27 @@ class Module(BaseDisplayModule):
             self._draw_centered(draw, width, height, "No items in feed")
             return image
 
-        padding = OUTER_PAD
+        x0, y0, x1, y1 = page_body(draw, width, height, self._feed_title)
         body_font = self.fonts.get("default")
         small_font = self.fonts.get("small", body_font)
-
-        # --- Header (pill style matching home screen) ---
-        feed_title = self._feed_title
-        draw_page_header(draw, width, feed_title, fit_header_font(draw, feed_title, width))
-
-        # --- Footer ---
-        updated_str = ""
-        if self._last_updated:
-            updated_str = f"Updated {self._last_updated.strftime(self.time_format)}"
+        footer_h = min(28, (y1 - y0) // 5)
+        body_bottom = y1 - footer_h - LINE_SPACING
+        line_h = get_text_size(draw, "Ag", body_font)[1]
+        item_h = line_h + 2 * LINE_SPACING
+        self._items_per_page = max(1, (body_bottom - y0) // item_h)
         total_pages = self._total_pages()
-        page_str = f"Page {self._page + 1} / {total_pages}" if total_pages > 1 else ""
-        footer_parts = [p for p in [page_str, updated_str] if p]
-        footer_text = "  •  ".join(footer_parts)
-        _, fh = self._get_text_size(draw, footer_text or "X", small_font)
-        footer_y = height - padding - fh
-        if footer_text:
-            fw, _ = self._get_text_size(draw, footer_text, small_font)
-            draw.text(((width - fw) // 2, footer_y), footer_text, font=small_font, fill=0)
-
-        # --- Body ---
-        body_top = PAGE_HEADER_H + padding
-        body_bottom = footer_y - 8
-        body_h = body_bottom - body_top
-        body_w = width - padding * 2
-
-        # Estimate how many items fit (use body font height + spacing)
-        _, line_h = self._get_text_size(draw, "Ag", body_font)
-        item_h = line_h + 8  # line height + spacing
-        self._items_per_page = max(1, body_h // item_h)
-
-        # Clamp page
-        total_pages = self._total_pages()
-        if total_pages > 0:
-            self._page = self._page % total_pages
-
+        self._page %= total_pages
         start = self._page * self._items_per_page
-        page_items = self._items[start: start + self._items_per_page]
-
-        y = body_top
+        page_items = self._items[start:start + self._items_per_page]
         for i, item in enumerate(page_items):
-            global_idx = start + i + 1
-            prefix = f"{global_idx}. "
-            title = item["title"]
-
-            # Truncate title to fit in one line with prefix
-            full_line = prefix + title
-            while full_line:
-                lw, _ = self._get_text_size(draw, full_line, body_font)
-                if lw <= body_w:
-                    break
-                # Trim title one char at a time
-                if len(title) > 1:
-                    title = title[:-2] + "…"
-                    full_line = prefix + title
-                else:
-                    break
-
-            draw.text((padding, y), full_line, font=body_font, fill=0)
-            y += item_h
-            if y >= body_bottom:
-                break
-
+            top = y0 + i * item_h
+            draw_text_block(draw, (x0, top, x1, min(top + item_h - LINE_SPACING, body_bottom)),
+                            ellipsize(draw, f"{start + i + 1}. {item['title']}", body_font, x1 - x0),
+                            body_font, align="left")
+        parts = []
+        if total_pages > 1:
+            parts.append(f"Page {self._page + 1} / {total_pages}")
+        if self._last_updated:
+            parts.append(f"Updated {self._last_updated.strftime(self.time_format)}")
+        draw_text_block(draw, (x0, y1 - footer_h, x1, y1), "  •  ".join(parts), small_font)
         return image

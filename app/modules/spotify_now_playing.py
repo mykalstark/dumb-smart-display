@@ -4,13 +4,15 @@ from __future__ import annotations
 import base64
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 
 import requests
 from PIL import Image, ImageDraw
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
-from app.core.theme import OUTER_PAD, CARD_RADIUS, PAGE_HEADER_H, draw_page_header, fit_header_font
+from app.core.theme import (
+    LINE_SPACING, CARD_RADIUS, draw_text_block, draw_message, page_body,
+)
 
 log = logging.getLogger(__name__)
 
@@ -183,35 +185,9 @@ class Module(BaseDisplayModule):
     # ------------------------------------------------------------------
     # Render helpers
     # ------------------------------------------------------------------
-    def _get_text_size(self, draw: ImageDraw.ImageDraw, text: str, font: Any) -> Tuple[int, int]:
-        bbox = draw.textbbox((0, 0), text, font=font)
-        return bbox[2] - bbox[0], bbox[3] - bbox[1]
+    def _draw_centered(self, draw, width, height, text):
+        draw_message(draw, width, height, text, self.fonts.get("default"))
 
-    def _draw_centered(self, draw: ImageDraw.ImageDraw, width: int, height: int, text: str) -> None:
-        font = self.fonts.get("default")
-        tw, th = self._get_text_size(draw, text, font)
-        draw.text(((width - tw) // 2, (height - th) // 2), text, font=font, fill=0)
-
-    def _truncate_to_width(
-        self,
-        draw: ImageDraw.ImageDraw,
-        text: str,
-        font: Any,
-        max_w: int,
-    ) -> str:
-        while text:
-            tw, _ = self._get_text_size(draw, text, font)
-            if tw <= max_w:
-                return text
-            if len(text) > 1:
-                text = text[:-2] + "…"
-            else:
-                return text
-        return text
-
-    # ------------------------------------------------------------------
-    # Render
-    # ------------------------------------------------------------------
     def render(self, width: int = 800, height: int = 480, **kwargs: Any) -> Image.Image:
         if self._last_fetch is None:
             self._fetch_now_playing()
@@ -223,83 +199,38 @@ class Module(BaseDisplayModule):
             self._draw_centered(draw, width, height, self._error)
             return image
 
-        padding = OUTER_PAD
-        inner_w = width - padding * 2
-
-        large_font = self.fonts.get("large", self.fonts.get("default"))
+        title = "Now Playing" if self._track and self._is_playing else "Spotify"
+        x0, y0, x1, y1 = page_body(draw, width, height, title)
         default_font = self.fonts.get("default")
         small_font = self.fonts.get("small", default_font)
-
-        # Page header — always shown so the screen is identifiable at a glance
-        hdr_text = "Now Playing" if (self._track and self._is_playing) else "Spotify"
-        draw_page_header(draw, width, hdr_text, fit_header_font(draw, hdr_text, width))
-        body_top = PAGE_HEADER_H + padding
-
+        footer_h = min(28, (y1 - y0) // 6)
+        body_bottom = y1 - footer_h - LINE_SPACING
         if self._track is None:
-            # Nothing playing — show a simple idle state
-            msg = "Nothing playing"
-            mw, mh = self._get_text_size(draw, msg, default_font)
-            body_mid = body_top + (height - body_top - mh) // 2
-            draw.text(((width - mw) // 2, body_mid), msg, font=default_font, fill=0)
-
-            if self._last_updated:
-                upd = f"Last checked {self._last_updated.strftime(self.time_format)}"
-                uw, uh = self._get_text_size(draw, upd, small_font)
-                draw.text(
-                    ((width - uw) // 2, body_mid + mh + 12),
-                    upd, font=small_font, fill=0,
-                )
-            return image
-
-        # Status badge: "Now Playing" or "Paused"
-        status_text = "Now Playing" if self._is_playing else "Paused"
-        sw, sh = self._get_text_size(draw, status_text, small_font)
-        badge_pad = 10
-        badge_w = sw + badge_pad * 2
-        badge_h = sh + badge_pad
-        badge_x = (width - badge_w) // 2
-        badge_y = body_top
-        draw.rounded_rectangle(
-            [(badge_x, badge_y), (badge_x + badge_w, badge_y + badge_h)],
-            radius=CARD_RADIUS,
-            fill=0 if self._is_playing else None,
-            outline=0,
-            width=2,
-        )
-        draw.text(
-            (badge_x + badge_pad, badge_y + badge_pad // 2),
-            status_text,
-            font=small_font,
-            fill=255 if self._is_playing else 0,
-        )
-
-        # Track name (large, wrapped to two lines max)
-        track_y = badge_y + badge_h + 24
-        track = self._track or ""
-        track_font = large_font
-        # Try to fit on one line; if too wide, truncate
-        track_line = self._truncate_to_width(draw, track, track_font, inner_w)
-        tw, th = self._get_text_size(draw, track_line, track_font)
-        draw.text(((width - tw) // 2, track_y), track_line, font=track_font, fill=0)
-
-        # Artist
-        artist_y = track_y + th + 16
-        artist = self._artist or ""
-        artist_line = self._truncate_to_width(draw, artist, default_font, inner_w)
-        aw, ah = self._get_text_size(draw, artist_line, default_font)
-        draw.text(((width - aw) // 2, artist_y), artist_line, font=default_font, fill=0)
-
-        # Album (small, below artist)
-        if self._album:
-            album_y = artist_y + ah + 10
-            album_line = self._truncate_to_width(draw, self._album, small_font, inner_w)
-            alw, alh = self._get_text_size(draw, album_line, small_font)
-            draw.text(((width - alw) // 2, album_y), album_line, font=small_font, fill=0)
-
-        # Footer: last updated
+            draw_text_block(draw, (x0, y0, x1, body_bottom), "Nothing playing", default_font)
+        else:
+            body_h = body_bottom - y0
+            badge_h = min(36, body_h // 5)
+            badge_w = min(x1 - x0, 160)
+            badge_x = (width - badge_w) // 2
+            draw.rounded_rectangle([(badge_x, y0), (badge_x + badge_w - 1, y0 + badge_h - 1)],
+                                   radius=CARD_RADIUS, outline=0, width=2,
+                                   fill=0 if self._is_playing else None)
+            draw_text_block(draw, (badge_x + 6, y0 + 4, badge_x + badge_w - 6, y0 + badge_h - 4),
+                            "Now Playing" if self._is_playing else "Paused", small_font,
+                            255 if self._is_playing else 0)
+            track_top = y0 + badge_h + LINE_SPACING
+            remaining = body_bottom - track_top
+            track_bottom = track_top + remaining * 55 // 100
+            artist_bottom = track_bottom + remaining * 27 // 100
+            draw_text_block(draw, (x0, track_top, x1, track_bottom), self._track,
+                            self.fonts.get("large", default_font), max_lines=2,
+                            min_size=min(28, max(14, (x1 - x0) // 20)))
+            draw_text_block(draw, (x0, track_bottom + LINE_SPACING, x1, artist_bottom),
+                            self._artist or "", default_font, min_size=min(18, max(12, (x1 - x0) // 20)))
+            draw_text_block(draw, (x0, artist_bottom + LINE_SPACING, x1, body_bottom),
+                            self._album or "", small_font)
         if self._last_updated:
-            upd = f"Updated {self._last_updated.strftime(self.time_format)}"
-            uw, uh = self._get_text_size(draw, upd, small_font)
-            draw.text(((width - uw) // 2, height - padding - uh), upd, font=small_font, fill=0)
-
+            label = "Updated" if self._track else "Last checked"
+            draw_text_block(draw, (x0, y1 - footer_h, x1, y1),
+                            f"{label} {self._last_updated.strftime(self.time_format)}", small_font)
         return image

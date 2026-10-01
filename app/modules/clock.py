@@ -8,6 +8,10 @@ import requests
 from PIL import Image, ImageDraw, ImageFont
 
 from app.core.module_interface import DEFAULT_LAYOUTS, LayoutPreset
+from app.core.theme import (
+    OUTER_PAD, INNER_PAD, COL_GAP, LINE_SPACING, CARD_RADIUS,
+    draw_card, draw_text_block, draw_metrics, page_body, layout_slots,
+)
 
 class Module:
     name = "clock"
@@ -57,117 +61,24 @@ class Module:
             # If the specific font file isn't found, use the one passed from main.py
             return self.fonts.get(fallback_font_key, ImageFont.load_default())
 
-    def _get_text_size(self, draw: ImageDraw.Draw, text: str, font: Any) -> Tuple[int, int]:
-        """Compatible text size calculator for new and old Pillow versions."""
-        try:
-            # Modern Pillow (>=10.0.0)
-            left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
-            return right - left, bottom - top
-        except AttributeError:
-            # Older Pillow
-            return draw.textsize(text, font=font)
-
     def _render_full(self, width: int, height: int) -> Image.Image:
-        """Classic full-screen light layout used before layout presets."""
         image = Image.new("1", (width, height), 255)
         draw = ImageDraw.Draw(image)
-
+        x0, y0, x1, y1 = page_body(draw, width, height, self.location_label or "Today")
+        split = y0 + (y1 - y0) * 3 // 5
         now = datetime.now()
-        time_str = now.strftime(self.time_format)
-        date_str = now.strftime(self.date_format)
-
-        header_text = self.location_label or "Today"
-
-        header_height = int(height * 0.22)
-        header_inset = 24
-        body_padding = 32
-
-        draw.rounded_rectangle(
-            [
-                (header_inset, header_inset),
-                (width - header_inset, header_height - header_inset),
-            ],
-            radius=18,
-            fill=0,
-        )
-
-        header_font = self.fonts.get("large", self.fonts.get("default"))
-        hw, hh = self._get_text_size(draw, header_text, header_font)
-        hx = (width - hw) // 2
-        hy = header_inset + ((header_height - (header_inset * 2)) - hh) // 2
-        draw.text((hx, hy), header_text, font=header_font, fill=255)
-
-        draw.line(
-            [(header_inset, header_height), (width - header_inset, header_height)],
-            fill=0,
-            width=2,
-        )
-        draw.line(
-            [(header_inset, header_height + 4), (width - header_inset, header_height + 4)],
-            fill=0,
-            width=1,
-        )
-
-        time_w, time_h = self._get_text_size(draw, time_str, self.time_font)
-        date_w, date_h = self._get_text_size(draw, date_str, self.date_font)
-
-        time_x = (width - time_w) // 2
-        time_y = header_height + 24
-
-        date_x = (width - date_w) // 2
-        date_y = time_y + time_h + 20
-
-        draw.text((time_x, time_y), time_str, font=self.time_font, fill=0)
-        draw.text((date_x, date_y), date_str, font=self.date_font, fill=0)
-
-        card_top = date_y + date_h + 30
-        card_height = 170
-        card_left = body_padding
-        card_right = width - body_padding
-        card_bottom = min(card_top + card_height, height - body_padding)
-
-        draw.rounded_rectangle(
-            [(card_left, card_top), (card_right, card_bottom)],
-            radius=16,
-            outline=0,
-            width=2,
-        )
-
-        label_font = self.fonts.get("default")
-        value_font = self.fonts.get("large", self.fonts.get("default"))
-
-        temps = [
-            self._format_temperature(self.weather.get("current"), fallback="--"),
-            self._format_temperature(self.weather.get("high"), fallback="--"),
-            self._format_temperature(self.weather.get("low"), fallback="--"),
-        ]
-        labels = ["Now", "High", "Low"]
-
-        x0, y0, x1, y1 = card_left, card_top, card_right, card_bottom
-        text_fill = 0
-        col_width = (x1 - x0) // 3
-        col_centers = [x0 + col_width * i + col_width // 2 for i in range(3)]
-        content_top = y0 + 18
-
-        for idx, (label, value) in enumerate(zip(labels, temps)):
-            lw, lh = self._get_text_size(draw, label, label_font)
-            vw, vh = self._get_text_size(draw, value, value_font)
-            cx = col_centers[idx]
-            draw.text((cx - lw // 2, content_top), label, font=label_font, fill=text_fill)
-            draw.text((cx - vw // 2, content_top + lh + 8), value, font=value_font, fill=text_fill)
-
-        draw.line([(x0 + col_width, y0 + 10), (x0 + col_width, y1 - 10)], fill=text_fill, width=1)
-        draw.line([(x0 + 2 * col_width, y0 + 10), (x0 + 2 * col_width, y1 - 10)], fill=text_fill, width=1)
-
-        if self.last_weather_fetch:
-            age = datetime.now() - self.last_weather_fetch
-            minutes = int(age.total_seconds() // 60)
-            updated_text = f"Updated {minutes}m ago"
-            footer_font = self.fonts.get("small", label_font)
-            fw, fh = self._get_text_size(draw, updated_text, footer_font)
-            draw.text((x1 - fw - 10, y1 - fh - 8), updated_text, font=footer_font, fill=text_fill)
-
+        self._draw_time_content(draw, (x0, y0, x1, split - COL_GAP), now)
+        self._draw_weather_card(draw, (x0, split, x1, y1))
         return image
+
+    def _draw_time_content(self, draw, box, now):
+        x0, y0, x1, y1 = box
+        inset = min(INNER_PAD, max(2, (y1 - y0) // 12))
+        split = y0 + (y1 - y0) * 2 // 3
+        draw_text_block(draw, (x0 + inset, y0 + inset, x1 - inset, split),
+                        now.strftime(self.time_format), self.time_font)
+        draw_text_block(draw, (x0 + inset, split + LINE_SPACING, x1 - inset, y1 - inset),
+                        now.strftime(self.date_format), self.date_font)
 
     def _resolve_layout(self, layout_hint: Optional[Any]) -> LayoutPreset:
         if isinstance(layout_hint, LayoutPreset):
@@ -176,45 +87,8 @@ class Module:
             return self._layout_lookup.get(layout_hint, self._default_layout)
         return self._default_layout
 
-    def _find_first_fit(self, columns: int, rows: int, colspan: int, rowspan: int, occupied: list[list[bool]]) -> Optional[Tuple[int, int]]:
-        for row in range(rows):
-            for col in range(columns):
-                if row + rowspan > rows or col + colspan > columns:
-                    continue
-                if any(
-                    occupied[r][c]
-                    for r in range(row, row + rowspan)
-                    for c in range(col, col + colspan)
-                ):
-                    continue
-                for r in range(row, row + rowspan):
-                    for c in range(col, col + colspan):
-                        occupied[r][c] = True
-                return col, row
-        return None
-
-    def _layout_slots(self, layout: LayoutPreset, width: int, height: int) -> Dict[str, Tuple[int, int, int, int]]:
-        cell_w = width / layout.columns
-        cell_h = height / layout.rows
-        occupied = [[False for _ in range(layout.columns)] for _ in range(layout.rows)]
-        slots: Dict[str, Tuple[int, int, int, int]] = {}
-
-        for slot in layout.slots:
-            start = self._find_first_fit(layout.columns, layout.rows, slot.colspan, slot.rowspan, occupied)
-            if start is None:
-                continue
-            col, row = start
-            x0 = int(round(col * cell_w))
-            y0 = int(round(row * cell_h))
-            x1 = int(round((col + slot.colspan) * cell_w))
-            y1 = int(round((row + slot.rowspan) * cell_h))
-            slots[slot.key] = (x0, y0, x1, y1)
-
-        return slots
-
-    def _inset_box(self, box: Tuple[int, int, int, int], padding: int) -> Tuple[int, int, int, int]:
-        x0, y0, x1, y1 = box
-        return x0 + padding, y0 + padding, x1 - padding, y1 - padding
+    def _layout_slots(self, layout, width, height):
+        return layout_slots(layout, width, height)
 
     def _pick_slot(self, slots: Dict[str, Tuple[int, int, int, int]], keys: Tuple[str, ...], fallback: Tuple[int, int, int, int]) -> Tuple[int, int, int, int]:
         for key in keys:
@@ -222,80 +96,28 @@ class Module:
                 return slots[key]
         return fallback
 
-    def _draw_time_card(
-        self,
-        draw: ImageDraw.Draw,
-        box: Tuple[int, int, int, int],
-        now: datetime,
-        header_text: str,
-    ) -> int:
-        x0, y0, x1, y1 = self._inset_box(box, 12)
-        draw.rounded_rectangle([(x0, y0), (x1, y1)], radius=18, outline=0, width=2)
+    def _draw_time_card(self, draw, box, now, header_text):
+        x0, y0, x1, y1 = box
+        draw_card(draw, *box)
+        header_bottom = y0 + (y1 - y0) // 4
+        draw_text_block(draw, (x0 + INNER_PAD, y0 + INNER_PAD, x1 - INNER_PAD, header_bottom),
+                        header_text, self.fonts.get("large", self.fonts.get("default")))
+        self._draw_time_content(draw, (x0, header_bottom, x1, y1), now)
+        return y1
 
-        header_font = self.fonts.get("large", self.fonts.get("default"))
-        header_w, header_h = self._get_text_size(draw, header_text, header_font)
-        header_y = y0 + 12
-        draw.text(((x0 + x1 - header_w) // 2, header_y), header_text, font=header_font, fill=0)
-
-        time_str = now.strftime(self.time_format)
-        date_str = now.strftime(self.date_format)
-        time_w, time_h = self._get_text_size(draw, time_str, self.time_font)
-        date_w, date_h = self._get_text_size(draw, date_str, self.date_font)
-
-        center_x = (x0 + x1) // 2
-        time_y = header_y + header_h + 14
-        date_y = time_y + time_h + 16
-
-        draw.text((center_x - time_w // 2, time_y), time_str, font=self.time_font, fill=0)
-        draw.text((center_x - date_w // 2, date_y), date_str, font=self.date_font, fill=0)
-
-        return date_y + date_h
-
-    def _draw_weather_card(
-        self,
-        draw: ImageDraw.Draw,
-        box: Tuple[int, int, int, int],
-        top_pad: int = 0,
-        invert: bool = False,
-    ) -> None:
-        x0, y0, x1, y1 = self._inset_box(box, 12)
-        if top_pad:
-            y0 = max(y0, y0 + top_pad)
-        bg_fill = 0 if invert else None
-        text_fill = 255 if invert else 0
-        draw.rounded_rectangle([(x0, y0), (x1, y1)], radius=16, outline=0, width=2, fill=bg_fill)
-
-        label_font = self.fonts.get("default")
-        value_font = self.fonts.get("large", self.fonts.get("default"))
-
-        temps = [
-            self._format_temperature(self.weather.get("current"), fallback="--"),
-            self._format_temperature(self.weather.get("high"), fallback="--"),
-            self._format_temperature(self.weather.get("low"), fallback="--"),
-        ]
-        labels = ["Now", "High", "Low"]
-
-        col_width = (x1 - x0) // 3
-        col_centers = [x0 + col_width * i + col_width // 2 for i in range(3)]
-        content_top = y0 + 18
-
-        for idx, (label, value) in enumerate(zip(labels, temps)):
-            lw, lh = self._get_text_size(draw, label, label_font)
-            vw, vh = self._get_text_size(draw, value, value_font)
-            cx = col_centers[idx]
-            draw.text((cx - lw // 2, content_top), label, font=label_font, fill=text_fill)
-            draw.text((cx - vw // 2, content_top + lh + 8), value, font=value_font, fill=text_fill)
-
-        draw.line([(x0 + col_width, y0 + 10), (x0 + col_width, y1 - 10)], fill=text_fill, width=1)
-        draw.line([(x0 + 2 * col_width, y0 + 10), (x0 + 2 * col_width, y1 - 10)], fill=text_fill, width=1)
-
+    def _draw_weather_card(self, draw, box, top_pad=0, invert=False):
+        x0, y0, x1, y1 = box
+        draw.rounded_rectangle([(x0, y0), (x1 - 1, y1 - 1)], radius=CARD_RADIUS,
+                               outline=0, width=2, fill=0 if invert else None)
+        fill = 255 if invert else 0
+        footer_h = min(28, (y1 - y0) // 5) if self.last_weather_fetch else 0
+        draw_metrics(draw, (x0, y0, x1, y1 - footer_h), ["Now", "High", "Low"],
+                     [self._format_temperature(self.weather.get(key)) for key in ("current", "high", "low")],
+                     self.fonts.get("default"), self.fonts.get("large", self.fonts.get("default")), fill)
         if self.last_weather_fetch:
-            age = datetime.now() - self.last_weather_fetch
-            minutes = int(age.total_seconds() // 60)
-            updated_text = f"Updated {minutes}m ago"
-            footer_font = self.fonts.get("small", label_font)
-            fw, fh = self._get_text_size(draw, updated_text, footer_font)
-            draw.text((x1 - fw - 10, y1 - fh - 8), updated_text, font=footer_font, fill=text_fill)
+            minutes = int((datetime.now() - self.last_weather_fetch).total_seconds() // 60)
+            draw_text_block(draw, (x0 + INNER_PAD, y1 - footer_h, x1 - INNER_PAD, y1 - 4),
+                            f"Updated {minutes}m ago", self.fonts.get("small", self.fonts.get("default")), fill)
 
     def render(self, width: int = 800, height: int = 480, **kwargs) -> Image.Image:
         layout = self._resolve_layout(kwargs.get("layout"))
@@ -306,7 +128,7 @@ class Module:
         draw = ImageDraw.Draw(image)
 
         now = datetime.now()
-        fallback_box = (0, 0, width, height)
+        fallback_box = (OUTER_PAD, OUTER_PAD, width - OUTER_PAD, height - OUTER_PAD)
         slots = self._layout_slots(layout, width, height)
         primary_box = self._pick_slot(slots, ("main", "primary", "row1_left", "top_left", "a"), fallback_box)
         secondary_box = None
@@ -315,15 +137,15 @@ class Module:
                 secondary_box = slots[key]
                 break
 
-        header_text = self.location_label or "Today"
-        last_text_y = self._draw_time_card(draw, primary_box, now, header_text)
+        if secondary_box is None:
+            return self._render_full(width, height)
+        if (primary_box[3] - primary_box[1] < 100 or secondary_box[2] - secondary_box[0] < 120
+                or secondary_box[3] - secondary_box[1] < 100):
+            return self._render_full(width, height)
 
-        if secondary_box:
-            self._draw_weather_card(draw, secondary_box, invert=layout.compact)
-        else:
-            _, y0, x1, _ = primary_box
-            weather_area = (primary_box[0], last_text_y + 18, x1, height - 10)
-            self._draw_weather_card(draw, weather_area, top_pad=0, invert=False)
+        header_text = self.location_label or "Today"
+        self._draw_time_card(draw, primary_box, now, header_text)
+        self._draw_weather_card(draw, secondary_box, invert=layout.compact)
 
         return image
 

@@ -3,15 +3,14 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-import textwrap
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from PIL import Image, ImageDraw
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
 from app.core.theme import (
-    OUTER_PAD, INNER_PAD, COL_GAP, LINE_SPACING,
-    draw_card, draw_card_header,
+    OUTER_PAD, INNER_PAD, COL_GAP, draw_card, draw_card_header,
+    draw_message, draw_list, fit_font,
 )
 from app.modules.ticktick_client import TaskItem, TickTickClient
 
@@ -114,22 +113,6 @@ class Module(BaseDisplayModule):
             title = f"{title} ({task.project_name})"
         return f"{prefix} {title}"
 
-    def _get_text_size(self, draw: ImageDraw.ImageDraw, text: str, font: Any) -> Tuple[int, int]:
-        try:
-            left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
-            return right - left, bottom - top
-        except AttributeError:  # pragma: no cover - fallback
-            return draw.textsize(text, font=font)
-
-    def _wrap_text(self, draw: ImageDraw.ImageDraw, text: str, font: Any, max_width: int) -> List[str]:
-        width_per_char = max(self._get_text_size(draw, "M", font)[0], 1)
-        approx_chars = max_width // width_per_char
-        wrapper = textwrap.TextWrapper(width=max(approx_chars, 1))
-        return wrapper.wrap(text)
-
-    # ------------------------------------------------------------------
-    # Rendering
-    # ------------------------------------------------------------------
     def supported_layouts(self) -> Sequence[LayoutPreset]:
         return (self._layout_lookup.get("full", self._default_layout),)
 
@@ -174,45 +157,14 @@ class Module(BaseDisplayModule):
 
         return image
 
-    def _draw_centered(self, draw: ImageDraw.ImageDraw, width: int, height: int, text: str) -> None:
-        font = self.fonts.get("default")
-        tw, th = self._get_text_size(draw, text, font)
-        draw.text(((width - tw) // 2, (height - th) // 2), text, font=font, fill=0)
+    def _draw_centered(self, draw, width, height, text):
+        draw_message(draw, width, height, text, self.fonts.get("default"))
 
-    def _draw_section(
-        self,
-        draw: ImageDraw.ImageDraw,
-        box: Tuple[int, int, int, int],
-        title: str,
-        tasks: List[TaskItem],
-        overflow: int,
-        header_font: Any,
-        body_font: Any,
-        small_font: Any,
-    ) -> None:
+    def _draw_section(self, draw, box, title, tasks, overflow, header_font, body_font, small_font):
         x0, y0, x1, y1 = box
-        draw_card(draw, x0, y0, x1, y1)
+        draw_card(draw, *box)
         content_top = draw_card_header(draw, x0, y0, x1, title, header_font)
-        line_y = content_top + INNER_PAD // 2
-        max_width = (x1 - x0) - INNER_PAD * 2
-
-        if not tasks:
-            placeholder = "No tasks" if overflow == 0 else "Tasks hidden"
-            draw.text((x0 + INNER_PAD, line_y), placeholder, font=body_font, fill=0)
-            return
-
-        for task in tasks:
-            line = self._format_task_line(task)
-            wrapped = self._wrap_text(draw, line, body_font, max_width)
-            for segment in wrapped:
-                draw.text((x0 + INNER_PAD, line_y), segment, font=body_font, fill=0)
-                _, lh = self._get_text_size(draw, segment, body_font)
-                line_y += lh + LINE_SPACING
-                if line_y >= y1 - 40:
-                    break
-            if line_y >= y1 - 40:
-                break
-
-        if overflow > 0 and line_y < y1 - 20:
-            overflow_text = f"+{overflow} more…"
-            draw.text((x0 + INNER_PAD, y1 - 28), overflow_text, font=small_font, fill=0)
+        body_font = fit_font(draw, "[09:30] Task", body_font, x1 - x0 - 2 * INNER_PAD, 32)
+        draw_list(draw, (x0 + INNER_PAD, content_top + INNER_PAD, x1 - INNER_PAD, y1 - INNER_PAD),
+                  [self._format_task_line(task) for task in tasks], body_font, small_font,
+                  overflow=overflow, empty="No tasks" if not overflow else f"+{overflow} more…")

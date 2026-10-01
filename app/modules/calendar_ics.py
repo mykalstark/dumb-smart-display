@@ -10,8 +10,9 @@ from PIL import Image, ImageDraw
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
 from app.core.theme import (
-    OUTER_PAD, INNER_PAD, COL_GAP, LINE_SPACING,
-    draw_card, draw_card_header,
+    OUTER_PAD, INNER_PAD, COL_GAP, LINE_SPACING, draw_card,
+    draw_card_header, draw_text_block, draw_message, draw_list, ellipsize,
+    fit_font,
 )
 
 log = logging.getLogger(__name__)
@@ -218,71 +219,29 @@ class Module(BaseDisplayModule):
     # ------------------------------------------------------------------
     # Render helpers
     # ------------------------------------------------------------------
-    def _get_text_size(self, draw: ImageDraw.ImageDraw, text: str, font: Any) -> Tuple[int, int]:
-        bbox = draw.textbbox((0, 0), text, font=font)
-        return bbox[2] - bbox[0], bbox[3] - bbox[1]
+    def _draw_centered(self, draw, width, height, text):
+        draw_message(draw, width, height, text, self.fonts.get("default"))
 
-    def _draw_centered(self, draw: ImageDraw.ImageDraw, width: int, height: int, text: str) -> None:
-        font = self.fonts.get("default")
-        tw, th = self._get_text_size(draw, text, font)
-        draw.text(((width - tw) // 2, (height - th) // 2), text, font=font, fill=0)
-
-    def _format_event_line(self, ev: _Event, max_width: int, draw: ImageDraw.ImageDraw, font: Any) -> str:
+    def _format_event_line(self, ev, max_width, draw, font):
         if ev.is_all_day or ev.event_time is None:
             prefix = "• "
         else:
             prefix = ev.event_time.strftime(self.time_format).lstrip("0") + " "
+        return ellipsize(draw, prefix + ev.title, font, max_width)
 
-        line = prefix + ev.title
-        while line:
-            lw, _ = self._get_text_size(draw, line, font)
-            if lw <= max_width:
-                break
-            # Trim from title end
-            if len(ev.title) > 1:
-                ev = _Event(ev.title[:-2] + "…", ev.event_date, ev.event_time, ev.is_all_day)
-                line = prefix + ev.title
-            else:
-                break
-        return line
-
-    def _draw_column(
-        self,
-        draw: ImageDraw.ImageDraw,
-        box: Tuple[int, int, int, int],
-        heading: str,
-        events: List[_Event],
-    ) -> None:
+    def _draw_column(self, draw, box, heading, events):
         x0, y0, x1, y1 = box
-        draw_card(draw, x0, y0, x1, y1)
-
+        draw_card(draw, *box)
         header_font = self.fonts.get("large", self.fonts.get("default"))
         body_font = self.fonts.get("default")
         small_font = self.fonts.get("small", body_font)
-
-        content_x = x0 + INNER_PAD
-        content_w = (x1 - x0) - INNER_PAD * 2
-
-        # Column heading
         content_top = draw_card_header(draw, x0, y0, x1, heading, header_font)
-        y = content_top + INNER_PAD // 2
-        _, lh = self._get_text_size(draw, "Ag", body_font)
-        line_gap = LINE_SPACING
+        content_w = x1 - x0 - 2 * INNER_PAD
+        body_font = fit_font(draw, "10:00 AM Event", body_font, content_w, 32)
+        draw_list(draw, (x0 + INNER_PAD, content_top + INNER_PAD, x1 - INNER_PAD, y1 - INNER_PAD),
+                  [self._format_event_line(ev, content_w, draw, body_font) for ev in events],
+                  body_font, small_font, empty="No events", max_lines=1)
 
-        if not events:
-            draw.text((content_x, y), "No events", font=small_font, fill=0)
-            return
-
-        for ev in events:
-            line = self._format_event_line(ev, content_w, draw, body_font)
-            draw.text((content_x, y), line, font=body_font, fill=0)
-            y += lh + line_gap
-            if y + lh > y1 - inner_pad:
-                break
-
-    # ------------------------------------------------------------------
-    # Render
-    # ------------------------------------------------------------------
     def render(self, width: int = 800, height: int = 480, **kwargs: Any) -> Image.Image:
         if self._last_fetch is None:
             self.tick()
@@ -307,20 +266,16 @@ class Module(BaseDisplayModule):
         today_heading = today.strftime("%A") + " " + str(today.day)
         tomorrow_heading = tomorrow.strftime("%A") + " " + str(tomorrow.day)
 
-        today_box = (padding, padding, padding + col_w, height - padding)
-        tomorrow_box = (padding + col_w + gap, padding, width - padding, height - padding)
+        small_font = self.fonts.get("small", self.fonts.get("default"))
+        footer_h = 28 + LINE_SPACING if self._last_updated else 0
+        card_bottom = height - padding - footer_h
+        today_box = (padding, padding, padding + col_w, card_bottom)
+        tomorrow_box = (padding + col_w + gap, padding, width - padding, card_bottom)
 
         self._draw_column(draw, today_box, today_heading, self._today_events)
         self._draw_column(draw, tomorrow_box, tomorrow_heading, self._tomorrow_events)
 
-        # Updated footer
         if self._last_updated:
-            small_font = self.fonts.get("small", self.fonts.get("default"))
-            upd = f"Updated {self._last_updated.strftime(self.time_format)}"
-            uw, uh = self._get_text_size(draw, upd, small_font)
-            # Draw inside the gap between columns, centered
-            gap_cx = padding + col_w + gap // 2
-            # Actually draw at very bottom center
-            draw.text(((width - uw) // 2, height - padding - uh - 2), upd, font=small_font, fill=0)
-
+            draw_text_block(draw, (padding, card_bottom + LINE_SPACING, width - padding, height - padding),
+                            f"Updated {self._last_updated.strftime(self.time_format)}", small_font)
         return image

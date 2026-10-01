@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import logging
 from datetime import date
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 
 from PIL import Image, ImageDraw, ImageFont
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
-from app.core.theme import OUTER_PAD, PAGE_HEADER_H, draw_page_header, fit_header_font
+from app.core.theme import (
+    LINE_SPACING, draw_text_block, draw_message, page_body,
+)
 
 log = logging.getLogger(__name__)
 
@@ -85,10 +87,6 @@ class Module(BaseDisplayModule):
                 result.append(ev)
         return result
 
-    def _get_text_size(self, draw: ImageDraw.ImageDraw, text: str, font: Any) -> Tuple[int, int]:
-        bbox = draw.textbbox((0, 0), text, font=font)
-        return bbox[2] - bbox[0], bbox[3] - bbox[1]
-
     def _load_font(self, size: int) -> Any:
         path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
         try:
@@ -96,18 +94,6 @@ class Module(BaseDisplayModule):
         except Exception:
             return self.fonts.get("large", self.fonts.get("default"))
 
-    def _fit_number_font(self, draw: ImageDraw.ImageDraw, text: str, max_w: int, max_h: int) -> Any:
-        """Return the largest font that fits the number string in the given box."""
-        for size in range(280, 24, -4):
-            font = self._load_font(size)
-            w, h = self._get_text_size(draw, text, font)
-            if w <= max_w and h <= max_h:
-                return font
-        return self._load_font(24)
-
-    # ------------------------------------------------------------------
-    # Render
-    # ------------------------------------------------------------------
     def render(self, width: int = 800, height: int = 480, **kwargs: Any) -> Image.Image:
         image = Image.new("1", (width, height), 255)
         draw = ImageDraw.Draw(image)
@@ -138,59 +124,20 @@ class Module(BaseDisplayModule):
             count_str = str(abs(delta))
             label_str = "days ago"
 
-        padding = OUTER_PAD
-        inner_w = width - padding * 2
-
-        # Page header — event name in the pill bar
-        draw_page_header(draw, width, event["name"], fit_header_font(draw, event["name"], width))
-
-        label_font = self.fonts.get("default")
-        label_w, label_h = self._get_text_size(draw, label_str, label_font)
-
-        # Pagination indicator at bottom if multiple events
-        pagination_h = 0
-        if len(visible) > 1:
-            pag_font = self.fonts.get("small", label_font)
-            pag_str = f"{self._active_index + 1} / {len(visible)}"
-            _, pagination_h = self._get_text_size(draw, pag_str, pag_font)
-            pagination_h += 10
-
-        body_top = PAGE_HEADER_H + padding
-        body_h = height - body_top - padding
-        number_max_h = body_h - label_h - 16 - pagination_h
-        number_max_w = inner_w
-
-        # Big number centered in body area
-        number_area_top = body_top
-        if delta == 0:
-            # "TODAY" — use large font, no huge number
-            today_font = self._load_font(96)
-            tw, th = self._get_text_size(draw, count_str, today_font)
-            tx = (width - tw) // 2
-            ty = number_area_top + (number_max_h - th) // 2
-            draw.text((tx, ty), count_str, font=today_font, fill=0)
-        else:
-            number_font = self._fit_number_font(draw, count_str, number_max_w, number_max_h)
-            nw, nh = self._get_text_size(draw, count_str, number_font)
-            nx = (width - nw) // 2
-            ny = number_area_top + (number_max_h - nh) // 2
-            draw.text((nx, ny), count_str, font=number_font, fill=0)
-
-        # Label below number
-        label_x = (width - label_w) // 2
-        label_y = height - padding - pagination_h - label_h - 4
-        draw.text((label_x, label_y), label_str, font=label_font, fill=0)
-
-        # Pagination indicator
-        if len(visible) > 1:
-            pag_font = self.fonts.get("small", label_font)
-            pag_str = f"{self._active_index + 1} / {len(visible)}"
-            pw, ph = self._get_text_size(draw, pag_str, pag_font)
-            draw.text(((width - pw) // 2, height - padding - ph), pag_str, font=pag_font, fill=0)
+        x0, y0, x1, y1 = page_body(draw, width, height, event["name"])
+        label_h = min(40, (y1 - y0) // 5)
+        pagination_h = min(28, (y1 - y0) // 6) if len(visible) > 1 else 0
+        number_bottom = y1 - label_h - pagination_h - LINE_SPACING
+        number_font = self._load_font(96 if delta == 0 else 280)
+        draw_text_block(draw, (x0, y0, x1, number_bottom), count_str, number_font)
+        draw_text_block(draw, (x0, number_bottom + LINE_SPACING, x1, y1 - pagination_h),
+                        label_str, self.fonts.get("default"))
+        if pagination_h:
+            draw_text_block(draw, (x0, y1 - pagination_h, x1, y1),
+                            f"{self._active_index + 1} / {len(visible)}",
+                            self.fonts.get("small", self.fonts.get("default")))
 
         return image
 
-    def _draw_centered(self, draw: ImageDraw.ImageDraw, width: int, height: int, text: str) -> None:
-        font = self.fonts.get("default")
-        tw, th = self._get_text_size(draw, text, font)
-        draw.text(((width - tw) // 2, (height - th) // 2), text, font=font, fill=0)
+    def _draw_centered(self, draw, width, height, text):
+        draw_message(draw, width, height, text, self.fonts.get("default"))
