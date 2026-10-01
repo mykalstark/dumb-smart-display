@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
 from app.core.theme import (
     OUTER_PAD, PAGE_HEADER_H, DIVIDER_W, LINE_SPACING,
-    draw_centered_text, draw_page_header, fit_header_font,
+    draw_centered_text, draw_message, draw_page_header, fit_header_font,
 )
 
 log = logging.getLogger(__name__)
@@ -454,8 +454,7 @@ class Module(BaseDisplayModule):
         draw = ImageDraw.Draw(image)
         if self._error or not self._days:
             msg = self._error or "No forecast data"
-            font = self._fit_font(draw, [msg], width - 16, height - 16, 24)
-            self._draw_centered_text(draw, msg, font, (8, 8, width - 8, height - 8))
+            draw_message(draw, width, height, msg, self.fonts.get("default"))
             return image
 
         # Keep the row geometry independent of column width. Wider columns

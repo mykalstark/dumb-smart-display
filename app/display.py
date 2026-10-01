@@ -5,6 +5,8 @@ from typing import Dict, Optional, Protocol
 
 from PIL import Image, ImageDraw, ImageFont
 
+from app.core.theme import draw_message
+
 
 class DisplayDriver(Protocol):
     width: int
@@ -345,13 +347,7 @@ class Display:
         except Exception:
             font = ImageFont.load_default()
 
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_w = bbox[2] - bbox[0]
-        text_h = bbox[3] - bbox[1]
-        x = (width - text_w) // 2
-        y = (height - text_h) // 2
-
-        draw.text((x, y), text, font=font, fill=0)
+        draw_message(draw, width, height, text, font)
         return self._add_border(image)
 
     def _add_border(self, image: Image.Image, thickness: int = 8, inset: int = 6) -> Image.Image:

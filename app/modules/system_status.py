@@ -5,12 +5,15 @@ import logging
 import socket
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
-from app.core.theme import OUTER_PAD, COL_GAP, CARD_RADIUS
+from app.core.theme import (
+    OUTER_PAD, INNER_PAD, COL_GAP, LINE_SPACING, draw_card,
+    draw_text_block, draw_message,
+)
 
 log = logging.getLogger(__name__)
 
@@ -172,48 +175,21 @@ class Module(BaseDisplayModule):
     # ------------------------------------------------------------------
     # Render helpers
     # ------------------------------------------------------------------
-    def _get_text_size(self, draw: ImageDraw.ImageDraw, text: str, font: Any) -> Tuple[int, int]:
-        bbox = draw.textbbox((0, 0), text, font=font)
-        return bbox[2] - bbox[0], bbox[3] - bbox[1]
-
-    def _draw_stat_card(
-        self,
-        draw: ImageDraw.ImageDraw,
-        box: Tuple[int, int, int, int],
-        label: str,
-        value: str,
-        *,
-        warn: bool = False,
-    ) -> None:
+    def _draw_stat_card(self, draw, box, label, value, *, warn=False):
         x0, y0, x1, y1 = box
-        inset = 6
-        cx0, cy0, cx1, cy1 = x0 + inset, y0 + inset, x1 - inset, y1 - inset
-
-        draw.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=CARD_RADIUS, outline=0, width=2)
-
-        label_font = self.fonts.get("small", self.fonts.get("default"))
-        value_font = self.fonts.get("default")
-
-        lw, lh = self._get_text_size(draw, label, label_font)
-        vw, vh = self._get_text_size(draw, value, value_font)
-
-        inner_h = cy1 - cy0
-        total_text_h = lh + 6 + vh
-        text_top = cy0 + max((inner_h - total_text_h) // 2, 4)
-
-        draw.text(((cx0 + cx1 - lw) // 2, text_top), label, font=label_font, fill=0)
-        val_y = text_top + lh + 6
-        draw.text(((cx0 + cx1 - vw) // 2, val_y), value, font=value_font, fill=0)
-
-        # Warn indicator: small triangle in top-right corner
+        draw_card(draw, *box)
+        inset = min(INNER_PAD, max(4, (y1 - y0) // 10))
+        split = y0 + (y1 - y0) * 2 // 5
+        draw_text_block(draw, (x0 + inset, y0 + inset, x1 - inset - (12 if warn else 0), split), label,
+                        self.fonts.get("small", self.fonts.get("default")))
+        draw_text_block(draw, (x0 + inset, split + LINE_SPACING, x1 - inset, y1 - inset),
+                        value, self.fonts.get("large", self.fonts.get("default")),
+                        max_lines=1 if label in ("IP Address", "Uptime") else 2,
+                        min_size=20 if x1 - x0 >= 200 else 12)
         if warn:
-            tx = cx1 - 10
-            ty = cy0 + 5
+            tx, ty = x1 - INNER_PAD - 8, y0 + 5
             draw.polygon([(tx, ty + 8), (tx + 8, ty + 8), (tx + 4, ty)], fill=0)
 
-    # ------------------------------------------------------------------
-    # Render
-    # ------------------------------------------------------------------
     def render(self, width: int = 800, height: int = 480, **kwargs: Any) -> Image.Image:
         if self._last_fetch is None:
             self._collect_stats()
@@ -225,8 +201,7 @@ class Module(BaseDisplayModule):
         if not s:
             font = self.fonts.get("default")
             msg = "Collecting stats…"
-            tw, th = self._get_text_size(draw, msg, font)
-            draw.text(((width - tw) // 2, (height - th) // 2), msg, font=font, fill=0)
+            draw_message(draw, width, height, msg, font)
             return image
 
         padding = OUTER_PAD
@@ -275,7 +250,7 @@ class Module(BaseDisplayModule):
             cards.append(("IP Address", s.get("ip", "N/A"), False))
 
         # Grid layout: 3 columns × ceil(n/3) rows
-        n_cols = 3
+        n_cols = 3 if width >= 600 else 2
         n_rows = -(-len(cards) // n_cols)  # ceiling div
         usable_w = width - padding * 2
         usable_h = height - padding * 2

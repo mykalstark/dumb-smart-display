@@ -11,8 +11,9 @@ are in `app/core/theme.py` — import from there instead of hardcoding values.
 from app.core.theme import (
     OUTER_PAD, INNER_PAD, COL_GAP, LINE_SPACING,
     CARD_RADIUS, CARD_OUTLINE,
-    PAGE_HEADER_H, PAGE_HEADER_FONT_SIZE,
-    draw_page_header, draw_card, draw_card_header, draw_divider, get_text_size,
+    PAGE_HEADER_H,
+    page_body, draw_text_block, draw_message, draw_list, draw_metrics,
+    draw_card, draw_card_header, draw_divider, get_text_size,
 )
 ```
 
@@ -29,13 +30,14 @@ from app.core.theme import (
 | `CARD_RADIUS` | 16 px | `rounded_rectangle` corner radius for all cards |
 | `CARD_OUTLINE` | 2 px | Card border stroke width |
 | `PAGE_HEADER_H` | 112 px | Height of the top header zone |
-| `PAGE_HEADER_FONT_SIZE` | 36 px | Font size for page header text |
 | `DIVIDER_W` | 1 px | Thin separator / section divider line width |
 
 `Display.render()` adds an outer frame and a 2 px inset frame after the module
 renders. Keep content and divider endpoints within `OUTER_PAD` on each side and
 above `height - OUTER_PAD` so they cannot overlap or thicken that frame. Calculate
 column widths from `width - 2 * OUTER_PAD`, and fit rows to the remaining height.
+Boxes use exclusive right and bottom bounds: `(x0, y0, x1, y1)`. `draw_card()`
+draws its last pixels at `x1 - 1` and `y1 - 1`, preserving the full clearance.
 
 ---
 
@@ -89,6 +91,44 @@ w, h = get_text_size(draw, "Hello", font)
 
 ## Helper functions
 
+### `page_body(draw, width, height, title) -> (x0, y0, x1, y1)`
+
+Draws the forecast-style pill header and returns the frame-safe body bounds.
+The header height is `min(PAGE_HEADER_H, height // 4)`, so smaller displays
+keep room for content. Divide the returned height into non-overlapping regions
+for cards, labels, and footers; avoid fixed card heights or sizing a later card
+from the last line of an earlier text block.
+
+### `draw_text_block(draw, box, text, font, fill=0, max_lines=1, align="center", min_size=12)`
+
+Fits visible glyph bounds to the box, preserving font family and weight. For
+multiple lines it wraps using measured pixels, including long unbroken words.
+When the smallest allowed font still cannot fit, it adds an ellipsis to the
+last visible line. Use a higher `min_size` for prominent titles to preserve
+readability. Text contains no implicit font-bearing offset outside the box.
+
+### `draw_message(draw, width, height, text, font)`
+
+Fits a centred empty/error/status message within the display's safe margins.
+Use it for unavailable-service states as well as the normal empty state.
+
+### `draw_list(draw, box, items, font, small_font, overflow=0, empty="No items", max_lines=2)`
+
+Draws complete list rows, reserves a footer when necessary, and reports the
+number hidden by the available height plus any configured overflow count.
+
+### `draw_metrics(draw, box, labels, values, label_font, value_font, fill=0)`
+
+Draws evenly spaced label/value pairs with thin separators. Narrow sidebar
+cards stack the metrics vertically. Inverted cards use `fill=255` for both
+text and separators.
+
+### `layout_slots(layout, width, height)`
+
+Maps preset slots into the usable canvas with `COL_GAP` between cards and
+`OUTER_PAD` at the frame. Clock and dinner presets fall back to their full
+layout when slots are too small to retain the essential labels and values.
+
 ### `draw_centered_text(draw, box, text, font, fill=0)`
 
 Centres the visible text inside `(x0, y0, x1, y1)`, accounting for the font's
@@ -136,7 +176,7 @@ Draws a horizontal 1 px separator line. Use for in-body section breaks.
 ```
 ┌─────────────────────────────────────┐  ← y=0
 │  ╔═══════════════════════════════╗  │
-│  ║        Page Title             ║  │  ← PAGE_HEADER_H (56px)
+│  ║        Page Title             ║  │  ← header height (up to 112px)
 │  ╚═══════════════════════════════╝  │
 ├─────────────────────────────────────┤  ← divider
 │                                     │
@@ -193,8 +233,7 @@ from PIL import Image, ImageDraw
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
 from app.core.theme import (
     OUTER_PAD, INNER_PAD, COL_GAP, LINE_SPACING,
-    PAGE_HEADER_H,
-    draw_page_header, draw_card, get_text_size,
+    page_body, draw_message, draw_card, get_text_size,
 )
 
 log = logging.getLogger(__name__)
@@ -250,13 +289,11 @@ class Module(BaseDisplayModule):
         # Error state
         if self._error or self._data is None:
             msg = self._error or "No data"
-            tw, th = get_text_size(draw, msg, default_font)
-            draw.text(((width - tw) // 2, (height - th) // 2), msg, font=default_font, fill=0)
+            draw_message(draw, width, height, msg, default_font)
             return image
 
         # Page header
-        draw_page_header(draw, width, "My Screen", default_font)
-        body_top = PAGE_HEADER_H + OUTER_PAD
+        body_left, body_top, body_right, body_bottom = page_body(draw, width, height, "My Screen")
 
         # … draw body content below body_top …
 
@@ -270,9 +307,30 @@ class Module(BaseDisplayModule):
 - [ ] Import from `app.core.theme` — no inline magic numbers for spacing or radius
 - [ ] Start `render()` with `Image.new("1", (width, height), 255)`
 - [ ] Handle the error / no-data state before drawing anything else
-- [ ] Call `draw_page_header()` if the module occupies the full screen
+- [ ] Use `page_body()` for a full-screen page header and adaptive body bounds
 - [ ] Use `draw_card()` for any bordered panels instead of `draw.rectangle()`
 - [ ] Use `get_text_size()` from theme instead of a local `textbbox` wrapper
 - [ ] Outer padding = `OUTER_PAD` (20 px), inner = `INNER_PAD` (12 px)
 - [ ] Card corner radius = `CARD_RADIUS` (16 px)
 - [ ] Text on a black fill = `fill=255`; text on white = `fill=0`
+- [ ] Reserve space for footer text before laying out body rows
+- [ ] Fit and wrap text by measured pixels with `draw_text_block()` / `draw_list()`
+- [ ] Keep essential labels visible in compact layouts, using a full-layout fallback when needed
+
+## Offline visual review and checks
+
+Render all nine modules, clock/dinner presets, and normal, long-text, empty,
+and error states without contacting configured services:
+
+```bash
+python -m scripts.preview_layouts --output /tmp/display-layouts
+python -m scripts.preview_layouts --output /tmp/display-layouts-small --width 320 --height 240
+python -m unittest discover -s tests -v
+```
+
+Open the generated `index.html` for individual images or `overview.png` for a
+contact sheet. The tests inspect the actual framed pixels and measured text
+bounds across landscape, portrait, compact, and indivisible display sizes.
+They also check essential labels, overflow counts, resized RSS pagination,
+font fallback, and countdown/Spotify variants. Hardware refresh behavior
+still requires a physical panel.

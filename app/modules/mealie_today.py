@@ -2,14 +2,16 @@
 
 import datetime
 import logging
-import textwrap
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import requests
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 from app.core.module_interface import DEFAULT_LAYOUTS, LayoutPreset
-from app.core.theme import OUTER_PAD, CARD_RADIUS, PAGE_HEADER_H, draw_page_header, fit_header_font
+from app.core.theme import (
+    OUTER_PAD, INNER_PAD, COL_GAP, LINE_SPACING, CARD_RADIUS,
+    draw_card, draw_text_block, draw_metrics, page_body, layout_slots,
+)
 
 log = logging.getLogger(__name__)
 
@@ -211,115 +213,25 @@ class Module:
     # ------------------------
     # Render Helpers
     # ------------------------
-    def _get_text_size(self, draw: ImageDraw.Draw, text: str, font: Any) -> Tuple[int, int]:
-        """Compatible text size calculator for new and old Pillow versions."""
-        try:
-            left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
-            return right - left, bottom - top
-        except AttributeError:
-            return draw.textsize(text, font=font)
-
-    def _resize_font(self, font: Any, size: int) -> Any:
-        """Return a resized version of the provided font when possible."""
-
-        try:
-            return font.font_variant(size=size)
-        except Exception:
-            pass
-
-        font_path = getattr(font, "path", None)
-        if font_path:
-            try:
-                return ImageFont.truetype(font_path, size)
-            except Exception:
-                pass
-
-        return font
-
-    def _fit_text_lines(
-        self,
-        draw: ImageDraw.Draw,
-        text: str,
-        base_font: Any,
-        max_width: int,
-        max_height: int,
-        *,
-        min_size: int = 12,
-        line_spacing: int = 6,
-    ) -> Tuple[Any, List[str], int]:
-        """Find the largest font size that fits the provided box.
-
-        Returns the chosen font, wrapped lines, and total height of the block.
-        """
-
-        start_size = getattr(base_font, "size", None) or 24
-
-        for size in range(start_size, min_size - 1, -2):
-            font = self._resize_font(base_font, size)
-            lines = self._wrap_text(draw, text, font, max_width)
-
-            total_height = 0
-            max_line_width = 0
-            for line in lines:
-                lw, lh = self._get_text_size(draw, line, font)
-                max_line_width = max(max_line_width, lw)
-                total_height += lh
-
-            if lines:
-                total_height += line_spacing * (len(lines) - 1)
-
-            if max_line_width <= max_width and total_height <= max_height:
-                return font, lines, total_height
-
-        fallback_font = self._resize_font(base_font, min_size) if min_size else base_font
-        lines = self._wrap_text(draw, text, fallback_font, max_width)
-        total_height = 0
-        for line in lines:
-            _, lh = self._get_text_size(draw, line, fallback_font)
-            total_height += lh
-        if lines:
-            total_height += line_spacing * (len(lines) - 1)
-
-        return fallback_font, lines, total_height
-
     def _render_full(self, width: int, height: int) -> Image.Image:
-        """Classic full-screen layout prior to the preset system."""
         image = Image.new("1", (width, height), 255)
         draw = ImageDraw.Draw(image)
-
-        # Page header — "Tonight's Dinner" in the standard pill bar
-        draw_page_header(draw, width, "Tonight's Dinner", fit_header_font(draw, "Tonight's Dinner", width))
-
-        padding = OUTER_PAD
-        body_top = PAGE_HEADER_H + padding
-        available_h = height - body_top - padding
-        header_bottom = body_top + int(available_h * 0.45)
-
-        title_box = (padding, body_top, width - padding, header_bottom)
-        meal_text = str(self.meal_details.get("name") or "You Effed up, Doordash")
-        bottom_of_title = self._draw_title_card(draw, title_box, meal_text, show_label=False)
-
-        time_box_top = bottom_of_title + 10
-        time_box_bottom = min(height - 90, time_box_top + 200)
-        if time_box_bottom <= time_box_top:
-            time_box_bottom = time_box_top + 120
-        time_box = (padding, time_box_top, width - padding, time_box_bottom)
-        self._draw_time_card(draw, time_box)
-
-        start_by = self._compute_start_time(self.meal_details.get("total"))
-        target_time = self._parse_target_time()
-        target_str = datetime.datetime.combine(datetime.date.today(), target_time)
-        target_label = self._format_clock(target_str)
-
-        if start_by:
-            banner_text = f"Start by {self._format_clock(start_by)} to eat by {target_label}"
-        else:
-            banner_text = f"Plan to eat by {target_label}"
-
-        banner_box = (padding, height - 80, width - padding, height - padding)
-        self._draw_banner(draw, banner_box, banner_text)
-
+        x0, y0, x1, y1 = page_body(draw, width, height, "Tonight's Dinner")
+        usable = y1 - y0 - 2 * COL_GAP
+        title_bottom = y0 + usable * 45 // 100
+        time_bottom = title_bottom + COL_GAP + usable * 35 // 100
+        self._draw_title_card(draw, (x0, y0, x1, title_bottom),
+                              str(self.meal_details.get("name") or "You Effed up, Doordash"), show_label=False)
+        self._draw_time_card(draw, (x0, title_bottom + COL_GAP, x1, time_bottom))
+        self._draw_banner(draw, (x0, time_bottom + COL_GAP, x1, y1), self._banner_text())
         return image
+
+    def _banner_text(self):
+        start_by = self._compute_start_time(self.meal_details.get("total"))
+        target = datetime.datetime.combine(datetime.date.today(), self._parse_target_time())
+        if start_by:
+            return f"Start by {self._format_clock(start_by)} to eat by {self._format_clock(target)}"
+        return f"Plan to eat by {self._format_clock(target)}"
 
     def _resolve_layout(self, layout_hint: Optional[Any]) -> LayoutPreset:
         if isinstance(layout_hint, LayoutPreset):
@@ -328,62 +240,14 @@ class Module:
             return self._layout_lookup.get(layout_hint, self._default_layout)
         return self._default_layout
 
-    def _find_first_fit(self, columns: int, rows: int, colspan: int, rowspan: int, occupied: list[list[bool]]) -> Optional[Tuple[int, int]]:
-        for row in range(rows):
-            for col in range(columns):
-                if row + rowspan > rows or col + colspan > columns:
-                    continue
-                if any(
-                    occupied[r][c]
-                    for r in range(row, row + rowspan)
-                    for c in range(col, col + colspan)
-                ):
-                    continue
-                for r in range(row, row + rowspan):
-                    for c in range(col, col + colspan):
-                        occupied[r][c] = True
-                return col, row
-        return None
-
-    def _layout_slots(self, layout: LayoutPreset, width: int, height: int) -> Dict[str, Tuple[int, int, int, int]]:
-        cell_w = width / layout.columns
-        cell_h = height / layout.rows
-        occupied = [[False for _ in range(layout.columns)] for _ in range(layout.rows)]
-        slots: Dict[str, Tuple[int, int, int, int]] = {}
-
-        for slot in layout.slots:
-            start = self._find_first_fit(layout.columns, layout.rows, slot.colspan, slot.rowspan, occupied)
-            if start is None:
-                continue
-            col, row = start
-            x0 = int(round(col * cell_w))
-            y0 = int(round(row * cell_h))
-            x1 = int(round((col + slot.colspan) * cell_w))
-            y1 = int(round((row + slot.rowspan) * cell_h))
-            slots[slot.key] = (x0, y0, x1, y1)
-
-        return slots
-
-    def _inset_box(self, box: Tuple[int, int, int, int], padding: int) -> Tuple[int, int, int, int]:
-        x0, y0, x1, y1 = box
-        return x0 + padding, y0 + padding, x1 - padding, y1 - padding
+    def _layout_slots(self, layout, width, height):
+        return layout_slots(layout, width, height)
 
     def _pick_slot(self, slots: Dict[str, Tuple[int, int, int, int]], keys: Tuple[str, ...], fallback: Tuple[int, int, int, int]) -> Tuple[int, int, int, int]:
         for key in keys:
             if key in slots:
                 return slots[key]
         return fallback
-
-    def _wrap_text(self, draw: ImageDraw.Draw, text: str, font: Any, max_width: int) -> List[str]:
-        """Wrap text to fit within max_width pixels."""
-        try:
-            avg_width = font.size * 0.6
-        except AttributeError:
-            avg_width = 20
-
-        approx_chars = int(max_width / avg_width)
-        wrapper = textwrap.TextWrapper(width=approx_chars)
-        return wrapper.wrap(text)
 
     def _parse_target_time(self) -> datetime.time:
         """Return configured target eat time, defaulting to 18:30 when parsing fails."""
@@ -426,110 +290,36 @@ class Module:
             result = result.lstrip("0")
         return result
 
-    def _draw_title_card(self, draw: ImageDraw.Draw, box: Tuple[int, int, int, int], meal_text: str, *, show_label: bool = True) -> int:
-        x0, y0, x1, y1 = self._inset_box(box, 12)
-        draw.rounded_rectangle([(x0, y0), (x1, y1)], radius=CARD_RADIUS, outline=0, width=2)
-
-        base_meal_font = self.fonts.get("large", self.fonts.get("default"))
-
-        inner_padding = 14
-        content_x0 = x0 + inner_padding
-        content_x1 = x1 - inner_padding
-        content_y0 = y0 + inner_padding
-        content_y1 = y1 - inner_padding
-
+    def _draw_title_card(self, draw, box, meal_text, *, show_label=True):
+        x0, y0, x1, y1 = box
+        draw_card(draw, *box)
+        top = y0 + INNER_PAD
         if show_label:
-            header_text = "Tonight's Dinner"
-            base_header_font = self.fonts.get("large", self.fonts.get("default"))
-            header_max_height = max(int((y1 - y0) * 0.25), 32)
-            header_font, header_lines, header_height = self._fit_text_lines(
-                draw,
-                header_text,
-                base_header_font,
-                content_x1 - content_x0,
-                header_max_height,
-                min_size=18,
-                line_spacing=4,
-            )
-            header_line = header_lines[0] if header_lines else ""
-            hw, hh = self._get_text_size(draw, header_line, header_font)
-            draw.text(((content_x0 + content_x1 - hw) // 2, content_y0), header_line, font=header_font, fill=0)
-            meal_area_top = content_y0 + header_height + 14
-        else:
-            meal_area_top = content_y0
+            header_bottom = y0 + (y1 - y0) // 4
+            draw_text_block(draw, (x0 + INNER_PAD, top, x1 - INNER_PAD, header_bottom),
+                            "Tonight's Dinner", self.fonts.get("default"))
+            top = header_bottom + LINE_SPACING
+        draw_text_block(draw, (x0 + INNER_PAD, top, x1 - INNER_PAD, y1 - INNER_PAD),
+                        meal_text, self.fonts.get("large", self.fonts.get("default")), max_lines=4,
+                        min_size=min(24, max(12, (x1 - x0) // 20)))
+        return y1
 
-        meal_area_height = max(content_y1 - meal_area_top, 20)
+    def _draw_time_card(self, draw, box, invert=False):
+        x0, y0, x1, y1 = box
+        draw.rounded_rectangle([(x0, y0), (x1 - 1, y1 - 1)], radius=CARD_RADIUS,
+                               outline=0, width=2, fill=0 if invert else None)
+        draw_metrics(draw, box, ["Prep", "Cook", "Total"],
+                     [self._format_minutes(self.meal_details.get(key)) for key in ("prep", "cook", "total")],
+                     self.fonts.get("default"), self.fonts.get("large", self.fonts.get("default")),
+                     255 if invert else 0)
 
-        meal_font, meal_lines, meal_block_height = self._fit_text_lines(
-            draw,
-            meal_text,
-            base_meal_font,
-            content_x1 - content_x0,
-            meal_area_height,
-            min_size=16,
-            line_spacing=8,
-        )
+    def _draw_banner(self, draw, box, text):
+        x0, y0, x1, y1 = box
+        draw_card(draw, *box)
+        inset = min(INNER_PAD, max(4, (y1 - y0) // 6))
+        draw_text_block(draw, (x0 + inset, y0 + inset, x1 - inset, y1 - inset), text,
+                        self.fonts.get("default", self.fonts.get("small")), max_lines=3)
 
-        current_y = meal_area_top + max((meal_area_height - meal_block_height) // 2, 0)
-        for line in meal_lines:
-            lw, lh = self._get_text_size(draw, line, meal_font)
-            draw.text(((content_x0 + content_x1 - lw) // 2, current_y), line, font=meal_font, fill=0)
-            current_y += lh + 8
-
-        return current_y
-
-    def _draw_time_card(self, draw: ImageDraw.Draw, box: Tuple[int, int, int, int], invert: bool = False) -> None:
-        x0, y0, x1, y1 = self._inset_box(box, 12)
-        bg_fill = 0 if invert else None
-        text_fill = 255 if invert else 0
-
-        draw.rounded_rectangle([(x0, y0), (x1, y1)], radius=16, outline=0, width=2, fill=bg_fill)
-
-        label_font = self.fonts.get("default")
-        value_font = self.fonts.get("large", self.fonts.get("default"))
-
-        prep_text = self._format_minutes(self.meal_details.get("prep"))
-        cook_text = self._format_minutes(self.meal_details.get("cook"))
-        total_text = self._format_minutes(self.meal_details.get("total"))
-
-        col_width = (x1 - x0) // 3
-        col_centers = [x0 + col_width * i + col_width // 2 for i in range(3)]
-        labels = ["Prep", "Cook", "Total"]
-        values = [prep_text, cook_text, total_text]
-
-        top = y0 + 20
-        for idx, (label, value) in enumerate(zip(labels, values)):
-            lw, lh = self._get_text_size(draw, label, label_font)
-            vw, vh = self._get_text_size(draw, value, value_font)
-            cx = col_centers[idx]
-            draw.text((cx - lw // 2, top), label, font=label_font, fill=text_fill)
-            draw.text((cx - vw // 2, top + lh + 10), value, font=value_font, fill=text_fill)
-
-        draw.line([(x0 + col_width, y0 + 12), (x0 + col_width, y1 - 12)], fill=text_fill, width=1)
-        draw.line([(x0 + 2 * col_width, y0 + 12), (x0 + 2 * col_width, y1 - 12)], fill=text_fill, width=1)
-
-    def _draw_banner(self, draw: ImageDraw.Draw, box: Tuple[int, int, int, int], text: str) -> None:
-        x0, y0, x1, y1 = self._inset_box(box, 12)
-        banner_font = self.fonts.get("default", self.fonts.get("small"))
-        bw, bh = self._get_text_size(draw, text, banner_font)
-        padding_x = 18
-        padding_y = 12
-        width_needed = bw + padding_x * 2
-        height_needed = bh + padding_y * 2
-
-        cx = (x0 + x1 - width_needed) // 2
-        cy = (y0 + y1 - height_needed) // 2
-        draw.rounded_rectangle(
-            [(cx, cy), (cx + width_needed, cy + height_needed)],
-            radius=CARD_RADIUS,
-            outline=0,
-            width=2,
-        )
-        draw.text((cx + padding_x, cy + padding_y), text, font=banner_font, fill=0)
-
-    # ------------------------
-    # Main Render
-    # ------------------------
     def render(self, width: int = 800, height: int = 480, **kwargs) -> Image.Image:
         layout = self._resolve_layout(kwargs.get("layout"))
         if layout.name == "full":
@@ -539,7 +329,7 @@ class Module:
         draw = ImageDraw.Draw(image)
 
         slots = self._layout_slots(layout, width, height)
-        fallback_box = (0, 0, width, height)
+        fallback_box = (OUTER_PAD, OUTER_PAD, width - OUTER_PAD, height - OUTER_PAD)
         title_box = self._pick_slot(slots, ("main", "primary", "row1_left", "top_left", "a"), fallback_box)
         details_box = None
         footer_box = None
@@ -554,26 +344,19 @@ class Module:
                 footer_box = slots[key]
                 break
 
+        if details_box is None:
+            return self._render_full(width, height)
+        if (title_box[3] - title_box[1] < 100 or details_box[2] - details_box[0] < 120
+                or details_box[3] - details_box[1] < 100):
+            return self._render_full(width, height)
+        if footer_box is None:
+            # Reserve a separate region below the details instead of overlaying its text.
+            x0, y0, x1, y1 = details_box
+            split = y0 + (y1 - y0) * 2 // 3
+            details_box = (x0, y0, x1, split - COL_GAP)
+            footer_box = (x0, split, x1, y1)
         meal_text = str(self.meal_details.get("name") or "You Effed up, Doordash")
-        bottom_of_title = self._draw_title_card(draw, title_box, meal_text)
-
-        if details_box:
-            self._draw_time_card(draw, details_box, invert=layout.compact)
-        else:
-            stacked_box = (title_box[0], bottom_of_title + 10, title_box[2], title_box[3])
-            self._draw_time_card(draw, stacked_box)
-
-        start_by = self._compute_start_time(self.meal_details.get("total"))
-        target_time = self._parse_target_time()
-        target_str = datetime.datetime.combine(datetime.date.today(), target_time)
-        target_label = self._format_clock(target_str)
-
-        if start_by:
-            banner_text = f"Start by {self._format_clock(start_by)} to eat by {target_label}"
-        else:
-            banner_text = f"Plan to eat by {target_label}"
-
-        banner_area = footer_box or details_box or title_box
-        self._draw_banner(draw, banner_area, banner_text)
-
+        self._draw_title_card(draw, title_box, meal_text)
+        self._draw_time_card(draw, details_box, invert=layout.compact)
+        self._draw_banner(draw, footer_box, self._banner_text())
         return image
