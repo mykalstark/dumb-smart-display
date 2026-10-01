@@ -95,10 +95,11 @@ def draw_page_header(
         fill=0,
     )
     # White centred text inside the pill
-    tw, th = get_text_size(draw, text, font)
+    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+    tw, th = right - left, bottom - top
     rect_inner_h = header_h - 2 * PAGE_HEADER_RY
     draw.text(
-        ((width - tw) // 2, PAGE_HEADER_RY + (rect_inner_h - th) // 2),
+        ((width - tw) // 2 - left, PAGE_HEADER_RY + (rect_inner_h - th) // 2 - top),
         text,
         font=font,
         fill=255,

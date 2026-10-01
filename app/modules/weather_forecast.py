@@ -12,9 +12,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
 from app.core.theme import (
-    PAGE_HEADER_H, PAGE_HEADER_RX, PAGE_HEADER_RY, PAGE_HEADER_RADIUS,
-    DIVIDER_W, COL_GAP, LINE_SPACING,
-    draw_page_header, fit_header_font, get_text_size as _theme_get_text_size,
+    PAGE_HEADER_H, DIVIDER_W, LINE_SPACING,
+    draw_page_header, fit_header_font,
 )
 
 log = logging.getLogger(__name__)
@@ -284,7 +283,10 @@ class Module(BaseDisplayModule):
         try:
             return ImageFont.truetype(path, size)
         except Exception:
-            return self.fonts.get("default")
+            fallback = self.fonts.get("default") or ImageFont.load_default()
+            if isinstance(fallback, ImageFont.FreeTypeFont):
+                return fallback.font_variant(size=size)
+            return fallback
 
     def _load_icon_font(self, size: int) -> Optional[Any]:
         """Load the bundled Weather Icons font at *size*.
@@ -310,26 +312,57 @@ class Module(BaseDisplayModule):
             self._icon_font_available = False
             return None
 
-    def _load_day_font(self, col_w: int) -> Any:
-        """Return the largest Bold font size where 'WED' (widest day abbrev)
-        fits within col_w minus 16 px of horizontal padding."""
-        target_w = col_w - 16
-        bold_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-        # Probe from large → small in steps of 2 px
-        for size in range(60, 18, -2):
-            try:
-                f = ImageFont.truetype(bold_path, size)
-            except Exception:
-                f = self.fonts.get("default")
-            dummy = Image.new("1", (1, 1))
-            dummy_draw = ImageDraw.Draw(dummy)
-            max_w = max(
-                self._get_text_size(dummy_draw, d, f)[0]
-                for d in ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
-            )
-            if max_w <= target_w:
-                return f
-        return self._load_font(18)
+    def _fit_font(
+        self, draw: ImageDraw.ImageDraw, texts: Sequence[str],
+        width: int, height: int, max_size: int, *, icon: bool = False,
+    ) -> Optional[Any]:
+        """Fit the whole row, including glyph bearings, in both dimensions.
+
+        Use one font per row so a three-digit or negative temperature does not
+        change the visual hierarchy from one column to the next.
+        """
+        loader = self._load_icon_font if icon else self._load_font
+        for size in range(max_size, 0, -1):
+            font = loader(size)
+            if font is None:
+                return None
+            if all(
+                w <= width and h <= height
+                for w, h in (self._get_text_size(draw, text, font) for text in texts)
+            ):
+                return font
+        return font
+
+    @staticmethod
+    def _draw_centered_text(
+        draw: ImageDraw.ImageDraw, text: str, font: Any,
+        box: Tuple[int, int, int, int],
+    ) -> None:
+        """Centre the visible glyph bounds, not the font's baseline origin."""
+        x0, y0, x1, y1 = box
+        left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+        draw.text(
+            (x0 + (x1 - x0 - (right - left)) // 2 - left,
+             y0 + (y1 - y0 - (bottom - top)) // 2 - top),
+            text, font=font, fill=0,
+        )
+
+    @staticmethod
+    def _draw_fallback_icon(
+        image: Image.Image, icon: str, box: Tuple[int, int, int, int],
+    ) -> None:
+        """Measure the geometric artwork too; its nominal size is approximate."""
+        x0, y0, x1, y1 = box
+        size = min(x1 - x0, y1 - y0)
+        tile = Image.new("1", (size * 4, size * 4), 255)
+        _draw_icon(ImageDraw.Draw(tile), icon, size * 2, size * 2, size)
+        bounds = tile.point(lambda p: 255 - p).getbbox()
+        if bounds is None:
+            return
+        tile = tile.crop(bounds)
+        tile.thumbnail((x1 - x0, y1 - y0), Image.Resampling.NEAREST)
+        image.paste(tile, (x0 + (x1 - x0 - tile.width) // 2,
+                           y0 + (y1 - y0 - tile.height) // 2))
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -425,137 +458,93 @@ class Module(BaseDisplayModule):
 
         image = Image.new("1", (width, height), 255)
         draw = ImageDraw.Draw(image)
-        default_font = self.fonts.get("default")
-
         if self._error or not self._days:
             msg = self._error or "No forecast data"
-            tw, th = self._get_text_size(draw, msg, default_font)
-            draw.text(((width - tw) // 2, (height - th) // 2), msg, font=default_font, fill=0)
+            font = self._fit_font(draw, [msg], width - 16, height - 16, 24)
+            self._draw_centered_text(draw, msg, font, (8, 8, width - 8, height - 8))
             return image
 
-        # --- Dynamic layout zones (px) ---
-        HEADER_H  = PAGE_HEADER_H   # styled header bar
-        
-        # Calculate column dimensions dynamically based on available width and number of days
-        n_days      = len(self._days)
-        col_w       = max(80, width // n_days)  # Ensure minimum column width
-        
-        TOP_PAD     = max(10, col_w // 10)    # space above day name
-        DAY_H       = min(75, max(40, col_w // 2))   # zone for large day-name text - scale with column width
-        GAP1        = max(8, col_w // 12)     # gap: day name → icon
-        ICON_H      = min(160, max(90, col_w * 3 // 4))  # zone for weather icon glyph / PIL drawing - scale with column width
-        GAP2        = max(8, col_w // 12)     # gap: icon → date
-        DATE_H      = max(25, col_w // 6)     # zone for date number - scale with column width
-        GAP3        = max(6, col_w // 14)     # gap: date → separator
-        SEP_H       = 1                       # separator line
-        GAP4        = max(6, col_w // 14)     # gap: separator → high temp
-        HIGH_H      = max(35, col_w // 2)     # zone for high temperature - scale with column width
-        GAP5        = max(6, col_w // 14)     # gap: high → low
-        LOW_H       = max(25, col_w // 3)     # zone for low temperature - scale with column width
-        GAP6        = max(6, col_w // 14)     # gap: low → precip
-        PRECIP_H    = max(18, col_w // 5)     # zone for precipitation (only drawn when non-zero)
-        BOT_PAD     = max(10, col_w // 10)    # space below last row
+        # Keep the row geometry independent of column width. Wider columns
+        # (including a partial forecast) must not push later rows off-screen.
+        days = self._days[:7]
+        n_days = len(days)
+        col_w = width // n_days
+        header_h = min(PAGE_HEADER_H, height // 4)
+        draw_page_header(
+            draw, width, "7 Day Forecast",
+            fit_header_font(draw, "7 Day Forecast", width, header_h), header_h,
+        )
+        body_top = header_h + 1
+        body_h = height - body_top
+        pad = min(12, body_h // 20)
+        gap = min(LINE_SPACING, body_h // 40)
+        inset = min(8, col_w // 10)
 
-        col_content_h = (
-            TOP_PAD + DAY_H + GAP1 + ICON_H + GAP2
-            + DATE_H + GAP3 + SEP_H + GAP4
-            + HIGH_H + GAP5 + LOW_H + GAP6 + PRECIP_H + BOT_PAD
+        # Reserve padding, all six gaps and the separator before distributing
+        # the remaining height. Cumulative edges absorb rounding remainders.
+        weights = (54, 100, 24, 52, 36, 24)  # day, icon, date, high, low, precip
+        usable_h = body_h - 2 * pad - 6 * gap - DIVIDER_W
+        rows = []
+        y = body_top + pad
+        used_weight = 0
+        for weight in weights:
+            row_h = (usable_h * (used_weight + weight) // sum(weights)
+                     - usable_h * used_weight // sum(weights))
+            rows.append((y, y + row_h))
+            used_weight += weight
+            y += row_h + gap
+            if len(rows) == 3:
+                separator_y = y
+                y += DIVIDER_W + gap
+
+        text_w = col_w - 2 * inset
+        day_texts = [day["day"].upper() for day in days]
+        date_texts = [str(day["dt"].day) for day in days]
+        high_texts = [self._fmt_temp(day["high"]) for day in days]
+        low_texts = [self._fmt_temp(day["low"]) for day in days]
+        precip_texts = [self._fmt_precip(day["precip"]) for day in days]
+        text_rows = (
+            (0, day_texts, 60), (2, date_texts, 18),
+            (3, high_texts, 32), (4, low_texts, 24), (5, precip_texts, 16),
+        )
+        fonts = {
+            row: self._fit_font(draw, texts, text_w, rows[row][1] - rows[row][0], size)
+            for row, texts, size in text_rows
+        }
+        # Size against every supported symbol, especially the wide partly-cloudy
+        # glyph and tall sun/storm glyphs, rather than nominal font point size.
+        icon_font = self._fit_font(
+            draw, [chr(code) for code in _WMO_GLYPH.values()],
+            text_w, rows[1][1] - rows[1][0],
+            min(160, text_w, rows[1][1] - rows[1][0]), icon=True,
         )
 
-        # Fonts - scale based on available column width
-        day_font    = self._load_day_font(col_w)
-        
-        date_size   = min(18, max(12, col_w // 14))
-        high_size   = min(30, max(18, col_w // 9))
-        low_size    = min(20, max(14, col_w // 13))
-        precip_size = min(14, max(11, col_w // 17))
-        
-        date_font   = self._load_font(date_size)
-        high_font   = self._load_font(high_size)
-        low_font    = self._load_font(low_size)
-        precip_font = self._load_font(precip_size)
-
-        # Icon font (Weather Icons TTF); None triggers PIL fallback
-        # Scale icon font size based on column width and icon zone height
-        ICON_FONT_SIZE = min(ICON_H - 20, col_w - 24)
-        icon_font = self._load_icon_font(ICON_FONT_SIZE)
-
-        # --- Header ---
-        draw_page_header(draw, width, "7 Day Forecast", fit_header_font(draw, "7 Day Forecast", width, HEADER_H), HEADER_H)
-
-        body_top = HEADER_H + 1
-        body_h   = height - body_top
-
-        # Vertically centre the content block if shorter than the body area
-        v_offset = max((body_h - col_content_h) // 2, 0)
-
-        # Fallback PIL icon size fits in the icon zone and column width
-        pil_icon_size = min(ICON_H - 18, col_w - 28)
-
-        for i, day in enumerate(self._days):
-            x0 = i * col_w
-            x1 = x0 + col_w
-            cx = (x0 + x1) // 2
-
-            # Vertical divider between columns (not before the first)
+        for i, day in enumerate(days):
+            # Divide the actual canvas, without a minimum width or lost pixels.
+            x0 = i * width // n_days
+            x1 = (i + 1) * width // n_days
             if i > 0:
-                draw.line([(x0, body_top + 6), (x0, height - 6)], fill=0, width=1)
-
-            y = body_top + v_offset
-
-            # Today indicator — thin bar at the very top of today's column
-            # (replaces the previous white-on-black full-column inversion)
+                draw.line([(x0, body_top + gap), (x0, height - gap - 1)],
+                          fill=0, width=DIVIDER_W)
             if i == 0:
-                draw.rectangle([(x0, y), (x1 - 1, y + 2)], fill=0)
+                draw.rectangle([(x0, body_top), (x1 - 1, body_top + 2)], fill=0)
 
-            y += TOP_PAD
+            for row, texts, _ in text_rows:
+                if texts[i]:
+                    self._draw_centered_text(
+                        draw, texts[i], fonts[row],
+                        (x0 + inset, rows[row][0], x1 - inset, rows[row][1]),
+                    )
 
-            # Day label ("MON", "TUE", …) — auto-fit large bold font
-            dtxt = day["day"].upper()
-            dw, dh = self._get_text_size(draw, dtxt, day_font)
-            draw.text((cx - dw // 2, y + (DAY_H - dh) // 2), dtxt, font=day_font, fill=0)
-            y += DAY_H + GAP1
-
-            # Weather icon — font glyph preferred; PIL geometry as fallback
+            icon_box = (x0 + inset, rows[1][0], x1 - inset, rows[1][1])
             icon_type = day["icon"]
-            icon_cy   = y + ICON_H // 2
             if icon_font is not None:
                 glyph = chr(_WMO_GLYPH.get(icon_type, _WMO_GLYPH["cloud"]))
-                gw, gh = self._get_text_size(draw, glyph, icon_font)
-                draw.text((cx - gw // 2, icon_cy - gh // 2), glyph, font=icon_font, fill=0)
+                self._draw_centered_text(draw, glyph, icon_font, icon_box)
             else:
-                _draw_icon(draw, icon_type, cx, icon_cy, pil_icon_size)
-            y += ICON_H + GAP2
+                self._draw_fallback_icon(image, icon_type, icon_box)
 
-            # Date number ("1", "15", …) — small, below icon
-            num = day["dt"].strftime("%d").lstrip("0") or "1"
-            nw, nh = self._get_text_size(draw, num, date_font)
-            draw.text((cx - nw // 2, y + (DATE_H - nh) // 2), num, font=date_font, fill=0)
-            y += DATE_H + GAP3
-
-            # Separator between date and temperatures
-            draw.line([(x0 + 8, y), (x1 - 8, y)], fill=0, width=1)
-            y += SEP_H + GAP4
-
-            # High temperature (primary reading — largest font in the temp section)
-            htxt = self._fmt_temp(day["high"])
-            hw2, hh2 = self._get_text_size(draw, htxt, high_font)
-            draw.text((cx - hw2 // 2, y + (HIGH_H - hh2) // 2), htxt, font=high_font, fill=0)
-            y += HIGH_H + GAP5
-
-            # Low temperature — smaller font, visually subordinate
-            ltxt = self._fmt_temp(day["low"])
-            lw, lh = self._get_text_size(draw, ltxt, low_font)
-            draw.text((cx - lw // 2, y + (LOW_H - lh) // 2), ltxt, font=low_font, fill=0)
-            y += LOW_H + GAP6
-
-            # Precipitation (only when non-zero)
-            pstr = self._fmt_precip(day["precip"])
-            if pstr:
-                pw, ph = self._get_text_size(draw, pstr, precip_font)
-                draw.text(
-                    (cx - pw // 2, y + max((PRECIP_H - ph) // 2, 2)),
-                    pstr, font=precip_font, fill=0,
-                )
+            draw.line([(x0 + inset, separator_y), (x1 - inset - 1, separator_y)],
+                      fill=0, width=DIVIDER_W)
 
         return image
