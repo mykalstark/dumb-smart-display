@@ -15,6 +15,38 @@ SIZES = ((800, 480), (801, 481), (640, 384), (480, 800), (320, 240))
 
 
 class DisplayLayoutTests(unittest.TestCase):
+    def test_header_bar_and_text_are_centered_in_the_framed_header_box(self):
+        display = Display(driver=CapturingDriver())
+        titles = ("Home", "Now Playing", "Tonight's Dinner", "Good News", "Family Vacation", "7 Day Forecast")
+        for width, height in SIZES:
+            header_h = min(theme.PAGE_HEADER_H, height // 4)
+            blank = Image.new("1", (width, height), 255)
+            frame = display._add_border(blank)
+            # Measure the visible interior from the actual display frame.
+            frame_top = max(y for y in range(theme.OUTER_PAD) if frame.getpixel((width // 2, y)) == 0) + 1
+            header = blank.copy()
+            theme.draw_page_header(ImageDraw.Draw(header), width, "", sample_fonts()["default"], header_h)
+            bar = header.crop((0, 0, width, header_h)).point(lambda p: 255 - p).getbbox()
+            self.assertIsNotNone(bar)
+            self.assertGreater(bar[1] - frame_top, 0)
+            self.assertLessEqual(abs((bar[1] - frame_top) - (header_h - bar[3])), 1)
+            self.assertLessEqual(abs(bar[0] - (width - bar[2])), 1)
+            for title in titles:
+                with self.subTest(size=(width, height), title=title):
+                    image = blank.copy()
+                    theme.draw_page_header(ImageDraw.Draw(image), width, title,
+                                           theme.fit_header_font(ImageDraw.Draw(image), title, width, header_h), header_h)
+                    # Subtract the empty pill to isolate all title pixels,
+                    # including wide text extending into the rounded ends.
+                    text = ImageChops.difference(image, header).crop(bar).getbbox()
+                    self.assertIsNotNone(text)
+                    text_h = bar[3] - bar[1]
+                    text_w = bar[2] - bar[0]
+                    self.assertLessEqual(abs(text[1] - (text_h - text[3])), 1)
+                    # Font bounding boxes can include unpainted edge pixels;
+                    # allow up to 1.5 px of horizontal raster asymmetry.
+                    self.assertLessEqual(abs(text[0] - (text_w - text[2])), 3)
+
     def capture(self, module, width, height, layout="full"):
         elements = []
         original = ImageDraw.ImageDraw.text
