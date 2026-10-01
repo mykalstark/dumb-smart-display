@@ -25,7 +25,7 @@ CARD_OUTLINE = 2        # card border stroke width
 
 PAGE_HEADER_H = 112     # height of the top header zone (px)
 PAGE_HEADER_RX = OUTER_PAD  # keep the pill clear of the display's inset frame
-PAGE_HEADER_RY = 16     # vertical inset for the pill rectangle
+PAGE_HEADER_RY = 16     # top frame clearance and total vertical whitespace around the pill
 PAGE_HEADER_RADIUS = 20 # corner radius of the pill
 
 DIVIDER_W = 1           # thin separator / section divider line width
@@ -299,16 +299,19 @@ def draw_page_header(
     Call this at the very start of ``render()`` before drawing body content.
     The body should start at ``header_h + 1``.
     """
-    # Black rounded rectangle (the pill)
+    # The header box starts below the display's inset frame, not at y=0.
+    # Centre the pill in that visible box with equal whitespace above/below.
+    pill_top = PAGE_HEADER_RY + PAGE_HEADER_RY // 2
+    pill_bottom = header_h - (PAGE_HEADER_RY + 1) // 2
     draw.rounded_rectangle(
-        [(PAGE_HEADER_RX, PAGE_HEADER_RY), (width - PAGE_HEADER_RX - 1, header_h - PAGE_HEADER_RY)],
+        [(PAGE_HEADER_RX, pill_top), (width - PAGE_HEADER_RX - 1, pill_bottom - 1)],
         radius=PAGE_HEADER_RADIUS,
         fill=0,
     )
     # White centred text inside the pill
     draw_text_block(
         draw,
-        (PAGE_HEADER_RX + 8, PAGE_HEADER_RY, width - PAGE_HEADER_RX - 8, header_h - PAGE_HEADER_RY),
+        (PAGE_HEADER_RX + 8, pill_top, width - PAGE_HEADER_RX - 8, pill_bottom),
         text, font, fill=255,
     )
     # 1px divider below the header zone

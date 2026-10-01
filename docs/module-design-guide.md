@@ -138,6 +138,9 @@ horizontal and vertical bearing offsets. Use it for centred row labels and icons
 
 Draws the standard black pill header and a 1 px divider line below, inset to keep
 both clear of the display frame.
+The pill is centred vertically between the inside edge of the top frame and
+the header divider, with equal white space above and below. Its title is centred
+inside the pill using visible glyph bounds.
 Call this first in `render()`. Body content starts at `PAGE_HEADER_H + 1`.
 
 ```python

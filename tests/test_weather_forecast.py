@@ -76,8 +76,8 @@ class ForecastLayoutTests(unittest.TestCase):
                                 self.assertEqual(len(elements), 1 + count * 6)
                                 header_h = min(PAGE_HEADER_H, height // 4)
                                 self.assert_inside(elements[0][1],
-                                                   (PAGE_HEADER_RX + 8, PAGE_HEADER_RY + 2,
-                                                    width - PAGE_HEADER_RX - 8, header_h - PAGE_HEADER_RY - 2))
+                                                   (PAGE_HEADER_RX + 8, PAGE_HEADER_RY * 3 // 2 + 2,
+                                                    width - PAGE_HEADER_RX - 8, header_h - PAGE_HEADER_RY // 2 - 2))
                                 for i in range(count):
                                     column = elements[1 + i * 6:1 + (i + 1) * 6]
                                     body_width = width - 2 * OUTER_PAD
@@ -123,7 +123,7 @@ class ForecastLayoutTests(unittest.TestCase):
         draw = ImageDraw.Draw(image)
         draw_page_header(draw, 800, "7 Day Forecast", fit_header_font(draw, "7 Day Forecast", 800))
         # Check actual white pixels in the rectangular middle of the black pill.
-        box = image.crop((50, 16, 750, 96)).getbbox()
+        box = image.crop((50, 24, 750, 104)).getbbox()
         self.assertIsNotNone(box)
         self.assertGreaterEqual(box[1], 2)
         self.assertLessEqual(box[3], 78)
