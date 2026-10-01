@@ -493,6 +493,24 @@ MODULE_SCHEMAS: Dict[str, SectionSchema] = {
     },
 }
 
+# Modules that can distinguish a successful empty result from unavailable data.
+EMPTY_MODULE_HELP: Dict[str, str] = {
+    "mealie_today": "Hide when no dinner is planned for today.",
+    "ticktick": "Hide when there are no tasks today or tomorrow.",
+    "calendar_ics": "Hide when there are no events today or tomorrow.",
+    "rss_feed": "Hide when the feed has no headlines.",
+    "countdown": "Hide when no events remain within the configured date window.",
+    "spotify_now_playing": "Hide when no track is available. Paused tracks stay visible.",
+}
+
+for _module_name, _empty_help in EMPTY_MODULE_HELP.items():
+    MODULE_SCHEMAS[_module_name]["fields"].append({
+        "key": "hide_when_empty",
+        "label": "Hide when empty",
+        "type": "toggle",
+        "help": _empty_help + " Hidden screens keep refreshing and return when content is available. Errors stay visible.",
+    })
+
 # Ordered list of module names — controls display order in the UI
 MODULE_ORDER: List[str] = [
     "clock",

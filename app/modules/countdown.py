@@ -60,6 +60,9 @@ class Module(BaseDisplayModule):
         # Pure date math — no I/O needed.
         pass
 
+    def is_empty(self) -> bool:
+        return not self._visible_events()
+
     def handle_button(self, event: str) -> None:
         visible = self._visible_events()
         if not visible:

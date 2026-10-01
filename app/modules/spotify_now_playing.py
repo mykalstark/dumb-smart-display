@@ -95,6 +95,9 @@ class Module(BaseDisplayModule):
     def refresh_interval(self) -> Optional[int]:
         return self.refresh_seconds
 
+    def is_empty(self) -> bool:
+        return self._last_updated is not None and not self._error and self._track is None
+
     def tick(self) -> None:
         now = datetime.now()
         if self._last_fetch and (now - self._last_fetch).total_seconds() < self.refresh_seconds:

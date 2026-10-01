@@ -1,3 +1,7 @@
+.empty-help { color: var(--muted); font-size: 13px; }
+.module-info .empty-option { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; cursor: pointer; }
+.empty-option input { margin: 0; accent-color: var(--accent); }
+
 /* ---- CSS Screen Mockups ------------------------------------------- */
 .mockup-frame {
   width: 160px;

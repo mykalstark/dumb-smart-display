@@ -6,7 +6,7 @@
     var items = Array.from(list.children);
     var position = 0;
     items.forEach(function (item, i) {
-      var enabled = item.querySelector('input[type="checkbox"]').checked;
+      var enabled = item.querySelector('input[name^="module_enabled__"]').checked;
       var badge = item.querySelector('.position-badge');
       badge.textContent = enabled ? String(++position).padStart(2, '0') : '—';
       badge.setAttribute('aria-label', enabled ? 'Playback position ' + position : 'Excluded from playback');

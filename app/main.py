@@ -412,7 +412,8 @@ def main() -> None:
         nonlocal next_render_force_full
         module = manager.current_module()
         if module is None:
-            display.render_text("No modules enabled.")
+            message = "No content to display." if manager.modules else "No modules enabled."
+            display.render_text(message)
             return
 
         try:
@@ -474,11 +475,12 @@ def main() -> None:
 
             _after_hours_rendered = False  # reset when we exit the after hours window
 
-            # 2. Render
-            render_active_module()
-
-            # 3. Background Ticks
+            # Refresh all enabled modules, including hidden ones, before deciding
+            # which screen has content. This also initializes data on startup.
             manager.tick_modules()
+
+            # 3. Render
+            render_active_module()
             
             # 4. Check Exit Condition
             cycle_count += 1

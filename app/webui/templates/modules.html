@@ -13,6 +13,7 @@
   <span class="summary-end">A little less noise. A little more you.</span>
 </div>
 <div class="list-caption"><h2>Display sequence</h2><p>Drag to reorder, or use the arrows. Previews are illustrative.</p></div>
+<p class="empty-help">Enable <strong>Hide when empty</strong> for each screen you want to skip when it has no content. Hidden screens keep refreshing and return automatically. Errors stay visible.</p>
 <p class="sr-only" id="reorder-status" role="status" aria-live="polite"></p>
 <form id="modules-form" method="POST" action="{{ url_for('modules_save') }}" data-dirty-form>
 <div id="module-list" role="list" aria-label="Display modules">
@@ -162,6 +163,13 @@
         </div>{# .mockup-frame #}
   <div class="module-info"><strong>{{ schema.label }}</strong><p>{{ schema.description }}</p>
     <div class="module-meta"><span class="status-badge {{ 'off' if not is_enabled }}" data-module-status>{{ 'Enabled' if is_enabled else 'Disabled' }}</span><a href="{{ url_for('config_page') }}#module-{{ mod }}">Configure {{ icon('arrow-right') }}</a></div>
+    {% if mod in empty_module_help %}
+    <label class="empty-option" title="{{ empty_module_help[mod] }}">
+      <input type="checkbox" name="module_hide_when_empty__{{ mod }}" form="modules-form"
+             {% if mod_settings.get(mod, {}).get('hide_when_empty', false) %}checked{% endif %} />
+      Hide when empty
+    </label>
+    {% endif %}
   </div>
   <span class="position-badge" aria-label="{{ 'Playback position ' ~ loop.index if is_enabled else 'Excluded from playback' }}">{{ '%02d' | format(loop.index) if is_enabled else '—' }}</span>
   <div class="module-controls">
