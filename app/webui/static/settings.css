@@ -106,3 +106,20 @@
 .upd-box { max-height: 90vh; overflow-y: auto; }
 .upd-log { background: #172a30; color: #c6ded8; }
 .upd-log .log-muted { color: #a5bfb8; opacity: 1; }
+
+.location-picker { margin-bottom: 24px; }
+.location-search-row { display: flex; gap: 10px; }
+.location-search-row input { flex: 1; }
+.location-search-row button { flex-shrink: 0; }
+#location-search-status:not(:empty) { margin-top: 10px; }
+.location-selected { display: flex; align-items: flex-start; gap: 10px; background: var(--accent-soft); padding: 14px 16px; border-radius: 10px; margin-top: 16px; }
+.location-selected > .icon { color: var(--accent); margin-top: 2px; }
+.location-selected small { display: block; color: var(--accent); font-size: 10px; margin-bottom: 4px; }
+.location-selected strong { display: block; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+#location-results { margin-top: 14px; }
+.location-results-heading { font-size: 12px; font-weight: 600; margin-bottom: 8px; }
+#location-result-list { display: grid; gap: 6px; margin-bottom: 10px; }
+.location-result { padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; color: var(--fg); background: var(--surface); text-align: left; font-size: 12px; }
+.location-result:hover { border-color: var(--accent); background: var(--accent-soft); }
+.location-coordinates > .help-text { margin: 12px 0 16px; }
+@media (max-width: 540px) { .location-search-row { flex-direction: column; } .location-search-row button { align-self: flex-start; } }

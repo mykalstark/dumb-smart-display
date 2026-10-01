@@ -172,9 +172,30 @@
 <section id="general" class="settings-panel" aria-labelledby="tab-general">
 <div class="card">
   <div class="card-header"><div><h2>{{ icon('pin') }} {{ location_schema.label }}</h2><p>Shared location, weather units, and time preferences.</p></div></div>
-  <div class="card-body"><div class="form-grid">
-    {% for field in location_schema.fields %}{{ render_field(field, 'location', get_nested(cfg.get('location', {}), field.key, '')) }}{% endfor %}
-  </div></div>
+  <div class="card-body">
+    {% set loc = cfg.get('location', {}) %}
+    <div class="location-picker" data-search-url="{{ url_for('location_search') }}">
+      <div class="field">
+        <label for="location-query">City, state or street address</label>
+        <div class="location-search-row">
+          <input type="text" id="location-query" value="{{ loc.get('address', '') }}" placeholder="Denver, CO or 123 Main St, Denver, CO" maxlength="300" autocomplete="off" aria-describedby="location-search-help" data-dirty-field />
+          <button type="button" id="location-search-button" class="btn-secondary">Find location</button>
+        </div>
+        <p class="help-text" id="location-search-help">Include your state or country for better matches. Search text is sent to OpenStreetMap only when you choose Find location.</p>
+      </div>
+      <p id="location-search-status" class="help-text" role="status" aria-live="polite"></p>
+      <div id="location-results" hidden><p class="location-results-heading">Choose your location</p><div id="location-result-list" role="group" aria-label="Matching locations"></div><p class="help-text">Search results © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a></p></div>
+      <div class="location-selected">{{ icon('pin') }}<div><small>Weather location</small><strong id="location-selected-label">{{ loc.get('address') or 'Using your saved location. Search above to change it.' }}</strong></div></div>
+      <input type="hidden" id="location__address" name="location__address" value="{{ loc.get('address', '') }}" />
+      <noscript><p class="help-text">Enable JavaScript to search for an address, or use manual coordinates below.</p></noscript>
+    </div>
+    <div class="form-grid">
+      {% for field in location_schema.fields if field.key not in ['latitude', 'longitude', 'address'] %}{{ render_field(field, 'location', get_nested(loc, field.key, '')) }}{% endfor %}
+    </div>
+    <details class="advanced-settings location-coordinates"><summary>Enter coordinates manually</summary><p class="help-text">Optional: use precise coordinates if you already know them or search is unavailable.</p><div class="form-grid">
+      {% for field in location_schema.fields if field.key in ['latitude', 'longitude'] %}{{ render_field(field, 'location', get_nested(loc, field.key, '')) }}{% endfor %}
+    </div></details>
+  </div>
 </div>
 <div class="card">
   <div class="card-header"><div><h2>{{ icon('display') }} Display settings</h2><p>Set the pace and orientation of your display.</p></div></div>
@@ -280,4 +301,4 @@
 
 
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='settings.js') }}" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='location.js') }}" defer></script><script src="{{ url_for('static', filename='settings.js') }}" defer></script>{% endblock %}

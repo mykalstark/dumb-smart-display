@@ -65,3 +65,21 @@ NODE_PATH=/tmp/display-ui-checks/node_modules node scripts/check_webui_browser.c
 The runner uses `/usr/bin/chromium` when available, otherwise Playwright's installed
 Chromium. Set `CHROMIUM_PATH` to use another installation and `PYTHON` to select a
 Python interpreter with the application's dependencies.
+
+
+## Location follow-up
+
+Location now leads with city/state or street-address search and an explicit choice
+of matching places. The selected label and numeric coordinates are stored together;
+clock and weather modules keep their existing coordinate contract. The display
+name stays independent, and old configurations need no migration. Manual coordinates
+are under a disclosure and clear any previous selected-address label when edited.
+
+Lookups use an authenticated POST endpoint and Nominatim with an identifying user
+agent, an eight-second timeout, a bounded 24-hour cache, and a one-second request
+cooldown. No requests happen on page load or while typing. Results use text-only
+buttons with OpenStreetMap attribution. Edited search text must be selected or
+cleared before saving, preventing an address draft from silently using old coordinates.
+The Python and browser suites cover city/address results, provider failure, empty
+results, caching, rate limits, selection, persistence, and manual fallback. Provider
+responses are mocked in tests; the test fixture blocks live geocoding requests.

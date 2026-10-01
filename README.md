@@ -322,11 +322,22 @@ From the Web UI you can configure every setting, enable modules, and apply updat
 
 The Web UI at `http://<pi-ip>:8080` groups settings into five sections:
 
-- **General** — Location, temperature and time format, screen rotation, cycle interval, and advanced hardware options
+- **General** — City or street address, temperature and time format, screen rotation, cycle interval, and advanced hardware options
 - **Module settings** — Enable a module and expand its row to configure it
 - **After hours** — Overnight schedule, photo rendering, and immediate photo upload/deletion
 - **Access** — Optional password protection and listen port
 - **Software** — Version information, update checking, and installation
+
+In **Location**, enter a city/state (for example, `Denver, CO`) or a street address,
+choose **Find location**, then select the correct match. Coordinates are filled in
+automatically for the weather modules. Keep a short **Display name**, such as
+`Home`, for the clock. Use **Save & restart** to apply the selected location.
+
+Lookup uses OpenStreetMap's Nominatim service and requires internet access. Search
+text is sent only when you press **Find location** or Enter; there are no autocomplete
+requests. The selected place is stored locally with your configuration. Repeated
+searches are cached, and requests are limited to one per second. **Enter coordinates
+manually** remains available for offline setup and existing coordinate-based configs.
 
 The **Modules** page manages playback order with dragging or move-up/down buttons
 that also work on phones and with a keyboard. Its Configure links open the matching

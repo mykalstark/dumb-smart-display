@@ -24,6 +24,7 @@ hardware:
 # Shared location used by clock and weather_forecast modules.
 # Any module can override these with its own latitude/longitude keys.
 location:
+  address: ""                     # Selected city/address from the web UI; optional for manual coordinates
   latitude: 40.513217
   longitude: -112.321445
   temperature_unit: "fahrenheit"  # or "celsius"
