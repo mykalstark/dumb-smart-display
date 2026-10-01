@@ -1,0 +1,223 @@
+/* ---- CSS Screen Mockups ------------------------------------------- */
+.mockup-frame {
+  width: 160px;
+  height: 96px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+  font-family: monospace;
+}
+
+/* Shared mockup primitives */
+.m-pill {
+  background: #000;
+  height: 20px;
+  border-radius: 3px;
+  margin: 3px 3px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.m-pill span { color: #fff; font-size: 6.5px; font-weight: 700; letter-spacing: .02em; }
+
+.m-line {
+  height: 4px;
+  background: #000;
+  border-radius: 2px;
+  margin: 0 6px 4px;
+}
+.m-line.full  { }
+.m-line.med   { width: 65%; }
+.m-line.short { width: 40%; }
+.m-line.xshort{ width: 25%; }
+.m-line.center { margin-left: auto; margin-right: auto; }
+
+.m-cols { display: flex; gap: 3px; margin: 0 3px; flex: 1; }
+.m-col  { flex: 1; display: flex; flex-direction: column; }
+.m-col-hdr {
+  height: 3px; background: #000; border-radius: 1px;
+  margin: 0 2px 4px;
+}
+
+.m-box {
+  border: 1px solid #000;
+  border-radius: 2px;
+  height: 13px;
+  margin: 0 2px 3px;
+  display: flex;
+  align-items: center;
+  padding: 0 3px;
+  font-size: 6px;
+  font-weight: 700;
+  color: #000;
+  flex-shrink: 0;
+}
+
+.m-body {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  flex: 1;
+}
+
+/* Big number (countdown) */
+.m-big-num {
+  font-size: 28px;
+  font-weight: 900;
+  line-height: 1;
+  color: #000;
+  text-align: center;
+  margin: 4px 0 0;
+}
+.m-big-label {
+  font-size: 7px;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: .1em;
+  color: #000;
+  margin-top: 1px;
+}
+
+/* Progress bar (spotify) */
+.m-progress-track {
+  height: 4px;
+  background: #ddd;
+  border-radius: 2px;
+  margin: 4px 6px 0;
+}
+.m-progress-fill {
+  height: 100%;
+  width: 38%;
+  background: #000;
+  border-radius: 2px;
+}
+
+/* Clock special layout */
+.m-clock-wrap {
+  display: flex;
+  height: 100%;
+}
+.m-clock-left {
+  width: 44px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #ddd;
+  padding: 5px 4px;
+  gap: 3px;
+}
+.m-clock-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+.m-clock-time {
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1;
+  color: #000;
+  letter-spacing: -1px;
+}
+.m-clock-date {
+  font-size: 7px;
+  font-weight: 600;
+  color: #555;
+  margin-top: 2px;
+}
+.m-weather-icon {
+  font-size: 16px;
+  line-height: 1;
+  text-align: center;
+}
+.m-temp {
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
+}
+.m-loc {
+  font-size: 5.5px;
+  color: #555;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Mealie big name block */
+.m-recipe-name {
+  height: 18px;
+  background: #000;
+  border-radius: 3px;
+  margin: 0 6px 5px;
+  opacity: .12;
+}
+.m-recipe-tag {
+  height: 9px;
+  background: #000;
+  border-radius: 8px;
+  margin: 0 auto;
+  width: 55px;
+  opacity: .18;
+}
+
+/* Weather forecast 7-col layout */
+.m-wx-cols {
+  display: flex;
+  height: 100%;
+  gap: 1px;
+  padding: 0 2px;
+}
+.m-wx-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2px 0;
+  gap: 2px;
+  border-right: 1px solid #eee;
+}
+.m-wx-col:last-child { border-right: none; }
+.m-wx-day  { font-size: 5.5px; font-weight: 700; color: #000; }
+.m-wx-icon { font-size: 11px; line-height: 1; }
+.m-wx-hi   { font-size: 5.5px; font-weight: 700; color: #000; }
+.m-wx-lo   { font-size: 5px;   color: #888; }
+
+
+#module-list { display: grid; gap: 12px; }
+.module-item { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; display: flex; align-items: center; gap: 18px; transition: border-color .15s; }
+.module-item.dragging { opacity: .5; }
+.module-item.drag-over { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.drag-handle { color: #85979f; cursor: grab; }
+.drag-handle:active { cursor: grabbing; }
+.module-info { flex: 1; min-width: 0; }
+.module-info strong { display: block; font-size: 14px; font-weight: 600; margin: 4px 0; }
+.module-info p { color: var(--muted); font-size: 11px; max-width: 360px; }
+.module-meta { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.module-meta a { font-size: 11px; text-decoration: none; }
+.module-meta a:hover { text-decoration: underline; }
+.position-badge { color: var(--muted); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; min-width: 32px; padding: 6px; text-align: center; font: 11px ui-monospace, monospace; }
+.module-controls { display: flex; align-items: center; gap: 20px; }
+.reorder-controls { display: flex; gap: 4px; }
+.reorder-controls button { width: 32px; height: 36px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--muted); }
+.reorder-controls button:hover:enabled { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.reorder-controls .icon { width: 15px; height: 15px; }
+.mockup-frame { border: 1px solid #c1cdd2; border-radius: 7px; box-shadow: 0 2px 4px #243a4310; }
+.disabled-item .mockup-frame { opacity: .6; }
+.list-caption { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.list-caption h2 { font-size: 16px; font-weight: 600; }
+.list-caption p { font-size: 11px; color: var(--muted); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+@media (max-width: 1100px) { .mockup-frame { display: none; } }
+@media (max-width: 800px) { .mockup-frame { display: block; } .module-item { gap: 14px; } }
+@media (max-width: 620px) {
+  .mockup-frame { display: none; } .drag-handle { display: none; }
+  .module-item { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 18px; }
+  .module-controls { grid-column: 1 / -1; padding-top: 12px; border-top: 1px solid var(--border); justify-content: space-between; }
+  .reorder-controls button { width: 42px; height: 40px; }
+  .list-caption { align-items: flex-start; flex-direction: column; gap: 3px; }
+}

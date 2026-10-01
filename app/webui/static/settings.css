@@ -1,0 +1,108 @@
+
+/* Backdrop */
+.upd-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 200;
+}
+
+/* Centred card */
+.upd-box {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 201;
+  width: min(640px, 92vw);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0,0,0,.18);
+  padding: 28px 28px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.upd-title {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0;
+}
+
+/* Stage pips row */
+.upd-stages {
+  display: flex;
+  gap: 6px;
+}
+.upd-stage-pip {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background .4s;
+}
+.upd-stage-pip.active   { background: var(--accent); }
+.upd-stage-pip.complete { background: var(--accent); }
+.upd-stage-pip.err      { background: #dc2626; }
+
+/* Animated progress bar */
+.upd-track {
+  width: 100%;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.upd-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width .5s ease;
+}
+.upd-bar.complete { background: #16a34a; }
+.upd-bar.err      { background: #dc2626; }
+
+.upd-stage-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: -6px;
+}
+
+/* Terminal log */
+.upd-log {
+  background: #0f0f0f;
+  color: #86efac;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  border-radius: 6px;
+  padding: 10px 12px;
+  height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.upd-log .log-muted { color: #4ade80; opacity: .6; }
+
+/* Result banners */
+.upd-result-ok  {
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
+  color: var(--success-fg);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 13px;
+}
+.upd-result-err {
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  color: var(--error-fg);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.upd-box { max-height: 90vh; overflow-y: auto; }
+.upd-log { background: #172a30; color: #c6ded8; }
+.upd-log .log-muted { color: #a5bfb8; opacity: 1; }
