@@ -96,7 +96,7 @@ Shows today's and tomorrow's events from any standard iCal URL — Google Calend
 ---
 
 ### RSS Feed (`rss_feed`)
-Displays headlines from any RSS 2.0 or Atom feed. Physical buttons page through headlines; the refresh button re-fetches the feed immediately.
+Displays full article titles from any RSS 2.0 or Atom feed, wrapping across lines and fitting as many articles as possible on each page. Titles taller than the screen show as much text as fits, with an ellipsis. Physical buttons page through headlines; the refresh button re-fetches the feed immediately.
 
 | Config key | Type | Default | Description |
 |---|---|---|---|
