@@ -12,8 +12,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
 from app.core.theme import (
-    PAGE_HEADER_H, DIVIDER_W, LINE_SPACING,
-    draw_page_header, fit_header_font,
+    OUTER_PAD, PAGE_HEADER_H, DIVIDER_W, LINE_SPACING,
+    draw_centered_text, draw_page_header, fit_header_font,
 )
 
 log = logging.getLogger(__name__)
@@ -339,13 +339,7 @@ class Module(BaseDisplayModule):
         box: Tuple[int, int, int, int],
     ) -> None:
         """Centre the visible glyph bounds, not the font's baseline origin."""
-        x0, y0, x1, y1 = box
-        left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
-        draw.text(
-            (x0 + (x1 - x0 - (right - left)) // 2 - left,
-             y0 + (y1 - y0 - (bottom - top)) // 2 - top),
-            text, font=font, fill=0,
-        )
+        draw_centered_text(draw, box, text, font)
 
     @staticmethod
     def _draw_fallback_icon(
@@ -468,14 +462,17 @@ class Module(BaseDisplayModule):
         # (including a partial forecast) must not push later rows off-screen.
         days = self._days[:7]
         n_days = len(days)
-        col_w = width // n_days
+        body_left, body_right = OUTER_PAD, width - OUTER_PAD
+        body_width = body_right - body_left
+        col_w = body_width // n_days
         header_h = min(PAGE_HEADER_H, height // 4)
         draw_page_header(
             draw, width, "7 Day Forecast",
             fit_header_font(draw, "7 Day Forecast", width, header_h), header_h,
         )
-        body_top = header_h + 1
-        body_h = height - body_top
+        # Display.render() adds a frame afterward; leave clearance on every side.
+        body_top, body_bottom = header_h + OUTER_PAD, height - OUTER_PAD
+        body_h = body_bottom - body_top
         pad = min(12, body_h // 20)
         gap = min(LINE_SPACING, body_h // 40)
         inset = min(8, col_w // 10)
@@ -520,14 +517,14 @@ class Module(BaseDisplayModule):
         )
 
         for i, day in enumerate(days):
-            # Divide the actual canvas, without a minimum width or lost pixels.
-            x0 = i * width // n_days
-            x1 = (i + 1) * width // n_days
+            # Divide the usable canvas, without a minimum width or lost pixels.
+            x0 = body_left + i * body_width // n_days
+            x1 = body_left + (i + 1) * body_width // n_days
             if i > 0:
-                draw.line([(x0, body_top + gap), (x0, height - gap - 1)],
+                draw.line([(x0, body_top), (x0, body_bottom - 1)],
                           fill=0, width=DIVIDER_W)
             if i == 0:
-                draw.rectangle([(x0, body_top), (x1 - 1, body_top + 2)], fill=0)
+                draw.rectangle([(x0 + inset, body_top), (x1 - inset - 1, body_top + 2)], fill=0)
 
             for row, texts, _ in text_rows:
                 if texts[i]:

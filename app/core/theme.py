@@ -24,7 +24,7 @@ CARD_RADIUS = 16        # rounded_rectangle corner radius for all cards
 CARD_OUTLINE = 2        # card border stroke width
 
 PAGE_HEADER_H = 112     # height of the top header zone (px)
-PAGE_HEADER_RX = 16     # horizontal inset for the pill rectangle
+PAGE_HEADER_RX = OUTER_PAD  # keep the pill clear of the display's inset frame
 PAGE_HEADER_RY = 16     # vertical inset for the pill rectangle
 PAGE_HEADER_RADIUS = 20 # corner radius of the pill
 
@@ -45,6 +45,23 @@ def get_text_size(draw: ImageDraw.ImageDraw, text: str, font: Any) -> Tuple[int,
     """
     bbox = draw.textbbox((0, 0), text, font=font)
     return bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+
+def draw_centered_text(
+    draw: ImageDraw.ImageDraw,
+    box: Tuple[int, int, int, int],
+    text: str,
+    font: Any,
+    fill: int = 0,
+) -> None:
+    """Centre the visible glyph bounds, including the font's bearing offsets."""
+    x0, y0, x1, y1 = box
+    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+    draw.text(
+        (x0 + (x1 - x0 - (right - left)) // 2 - left,
+         y0 + (y1 - y0 - (bottom - top)) // 2 - top),
+        text, font=font, fill=fill,
+    )
 
 
 def fit_header_font(
@@ -90,22 +107,18 @@ def draw_page_header(
     """
     # Black rounded rectangle (the pill)
     draw.rounded_rectangle(
-        [(PAGE_HEADER_RX, PAGE_HEADER_RY), (width - PAGE_HEADER_RX, header_h - PAGE_HEADER_RY)],
+        [(PAGE_HEADER_RX, PAGE_HEADER_RY), (width - PAGE_HEADER_RX - 1, header_h - PAGE_HEADER_RY)],
         radius=PAGE_HEADER_RADIUS,
         fill=0,
     )
     # White centred text inside the pill
-    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
-    tw, th = right - left, bottom - top
-    rect_inner_h = header_h - 2 * PAGE_HEADER_RY
-    draw.text(
-        ((width - tw) // 2 - left, PAGE_HEADER_RY + (rect_inner_h - th) // 2 - top),
-        text,
-        font=font,
-        fill=255,
+    draw_centered_text(
+        draw,
+        (PAGE_HEADER_RX, PAGE_HEADER_RY, width - PAGE_HEADER_RX, header_h - PAGE_HEADER_RY),
+        text, font, fill=255,
     )
     # 1px divider below the header zone
-    draw.line([(0, header_h), (width, header_h)], fill=0, width=1)
+    draw.line([(OUTER_PAD, header_h), (width - OUTER_PAD - 1, header_h)], fill=0, width=DIVIDER_W)
 
 
 def draw_card(

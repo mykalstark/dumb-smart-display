@@ -32,6 +32,11 @@ from app.core.theme import (
 | `PAGE_HEADER_FONT_SIZE` | 36 px | Font size for page header text |
 | `DIVIDER_W` | 1 px | Thin separator / section divider line width |
 
+`Display.render()` adds an outer frame and a 2 px inset frame after the module
+renders. Keep content and divider endpoints within `OUTER_PAD` on each side and
+above `height - OUTER_PAD` so they cannot overlap or thicken that frame. Calculate
+column widths from `width - 2 * OUTER_PAD`, and fit rows to the remaining height.
+
 ---
 
 ## Color scheme
@@ -84,9 +89,15 @@ w, h = get_text_size(draw, "Hello", font)
 
 ## Helper functions
 
+### `draw_centered_text(draw, box, text, font, fill=0)`
+
+Centres the visible text inside `(x0, y0, x1, y1)`, accounting for the font's
+horizontal and vertical bearing offsets. Use it for centred row labels and icons.
+
 ### `draw_page_header(draw, width, text, font, header_h=PAGE_HEADER_H)`
 
-Draws the standard full-width black pill header and a 1 px divider line below.
+Draws the standard black pill header and a 1 px divider line below, inset to keep
+both clear of the display frame.
 Call this first in `render()`. Body content starts at `PAGE_HEADER_H + 1`.
 
 ```python
