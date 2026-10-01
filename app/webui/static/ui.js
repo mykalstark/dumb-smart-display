@@ -148,7 +148,7 @@
     var submitting = false;
     var bar = document.querySelector('.save-bar');
     function snapshot() {
-      var controls = form.id === 'modules-form' ? document.querySelectorAll('#module-list input') : form.querySelectorAll('input[name], select[name], textarea[name]');
+      var controls = form.id === 'modules-form' ? document.querySelectorAll('#module-list input') : form.querySelectorAll('input[name], input[data-dirty-field], select[name], textarea[name]');
       return JSON.stringify(Array.from(controls).map(function (el) {
         return [el.name, el.type === 'checkbox' ? el.checked : el.value];
       }));

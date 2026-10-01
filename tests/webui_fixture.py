@@ -27,6 +27,9 @@ if __name__ == '__main__':
 
         server._restart_service = lambda: (True, 'Display service restarting.')
         server._get_current_version = lambda: 'test-version'
+        def block_lookup():
+            return server.jsonify(error='Lookup must be mocked in the browser fixture.'), 502
+        server.app.view_functions['location_search'] = block_lookup
         # Updates must always be intercepted by the browser test.
         def block_update():
             return server.Response('Updates disabled in browser fixture.', status=409)

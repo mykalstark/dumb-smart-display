@@ -32,8 +32,9 @@ SectionSchema = Dict[str, Any]
 # ---------------------------------------------------------------------------
 LOCATION_SCHEMA: SectionSchema = {
     "label": "Location",
-    "description": "Shared GPS coordinates used by weather and clock modules.",
+    "description": "Choose a city or street address for clock and weather modules.",
     "fields": [
+        {"key": "address", "label": "Selected location", "type": "text"},
         {
             "key": "latitude",
             "label": "Latitude",
@@ -41,6 +42,8 @@ LOCATION_SCHEMA: SectionSchema = {
             "help": "Decimal degrees, e.g. 40.7128",
             "required": True,
             "placeholder": "40.513217",
+            "min": -90,
+            "max": 90,
         },
         {
             "key": "longitude",
@@ -49,10 +52,12 @@ LOCATION_SCHEMA: SectionSchema = {
             "help": "Decimal degrees, e.g. -74.0060",
             "required": True,
             "placeholder": "-112.321445",
+            "min": -180,
+            "max": 180,
         },
         {
             "key": "location_name",
-            "label": "Location Name",
+            "label": "Display name",
             "type": "text",
             "help": "Friendly name shown on the clock screen.",
             "placeholder": "Home",

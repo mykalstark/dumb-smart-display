@@ -35,6 +35,7 @@ from flask import (
     url_for,
 )
 
+from app.webui.geocoding import LookupBusy, LookupUnavailable, search_places
 from app.webui.schema import (
     AFTER_HOURS_SCHEMA,
     HARDWARE_SCHEMA,
@@ -510,6 +511,23 @@ def login():  # type: ignore[no-untyped-def]
 def logout():  # type: ignore[no-untyped-def]
     session.clear()
     return redirect(url_for("login"))
+
+
+@app.route("/location/search", methods=["POST"])
+@login_required
+def location_search():
+    payload = request.get_json(silent=True)
+    query = payload.get('query') if isinstance(payload, dict) else None
+    if not isinstance(query, str):
+        return jsonify(error='Enter a city and state or a street address.'), 400
+    try:
+        return jsonify(results=search_places(query))
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    except LookupBusy as exc:
+        return jsonify(error=str(exc)), 429, {'Retry-After': '1'}
+    except LookupUnavailable as exc:
+        return jsonify(error=str(exc)), 502
 
 
 @app.route("/config", methods=["GET"])

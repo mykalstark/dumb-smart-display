@@ -32,7 +32,7 @@ class WebUITests(unittest.TestCase):
 
     def test_pages_and_local_assets_render(self):
         for url in ['/config', '/modules', '/static/ui.css', '/static/ui.js',
-                    '/static/settings.js', '/static/settings.css',
+                    '/static/settings.js', '/static/settings.css', '/static/location.js',
                     '/static/modules.js', '/static/modules.css']:
             with self.subTest(url=url):
                 with self.client.get(url) as response:
@@ -41,6 +41,7 @@ class WebUITests(unittest.TestCase):
     def test_settings_save_preserves_module_order_and_unrendered_keys(self):
         data = {
             'location__location_name': 'Studio',
+            'location__address': 'Denver, Colorado, United States',
             'location__latitude': '40.5',
             'location__longitude': '-112.3',
             'modules__enabled__clock': '1',
@@ -55,6 +56,7 @@ class WebUITests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         cfg = server._load_user_config()
         self.assertEqual(cfg['location']['latitude'], 40.5)
+        self.assertEqual(cfg['location']['address'], 'Denver, Colorado, United States')
         self.assertEqual(cfg['modules']['enabled'], ['countdown', 'clock', 'system_status'])
         self.assertEqual(cfg['modules']['settings']['clock']['custom'], 'retain')
         self.assertEqual(cfg['modules']['settings']['countdown']['events'],
@@ -85,6 +87,29 @@ class WebUITests(unittest.TestCase):
         self.assertTrue((server._UPLOADS_DIR / 'after_hours_photo.png').exists())
         self.assertTrue(self.client.post('/after-hours/delete').json['ok'])
         self.assertEqual(server._load_user_config()['hardware']['after_hours']['photo'], '')
+
+    def test_location_search_responses_and_authentication(self):
+        places = [{'label': 'Denver, Colorado', 'latitude': 39.7392, 'longitude': -104.9903}]
+        with patch.object(server, 'search_places', return_value=places) as lookup:
+            response = self.client.post('/location/search', json={'query': 'Denver, CO'})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json['results'], places)
+            lookup.assert_called_once_with('Denver, CO')
+        for payload in [None, [], {'query': 123}]:
+            self.assertEqual(self.client.post('/location/search', json=payload).status_code, 400)
+        for exception, code in [(ValueError('Invalid query'), 400),
+                                (server.LookupBusy('Please wait'), 429),
+                                (server.LookupUnavailable('Unavailable'), 502)]:
+            with patch.object(server, 'search_places', side_effect=exception):
+                response = self.client.post('/location/search', json={'query': 'Denver, CO'})
+                self.assertEqual(response.status_code, code)
+                self.assertIn('error', response.json)
+                if code == 429:
+                    self.assertEqual(response.headers['Retry-After'], '1')
+        server._write_user_config({'webui': {'password': 'test-password'}})
+        with patch.object(server, 'search_places') as lookup:
+            self.assertEqual(self.client.post('/location/search', json={'query': 'Denver, CO'}).status_code, 302)
+            lookup.assert_not_called()
 
     def test_login_and_password_protected_routes(self):
         server._write_user_config({'webui': {'password': 'test-password'}})
