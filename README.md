@@ -320,15 +320,20 @@ From the Web UI you can configure every setting, enable modules, and apply updat
 
 ### Via the Web UI *(recommended)*
 
-The Web UI at `http://<pi-ip>:8080` provides a full settings editor covering:
+The Web UI at `http://<pi-ip>:8080` groups settings into five sections:
 
-- **Location** — Latitude, longitude, location name, temperature unit (shared by Clock and Weather Forecast)
-- **Active Modules** — Toggle any module on or off with a single click
-- **Module Settings** — Expandable settings panel for each module
-- **Display Settings** — Screen rotation, module cycle interval, simulator mode
-- **Web UI Settings** — Optional password protection, listen port
+- **General** — Location, temperature and time format, screen rotation, cycle interval, and advanced hardware options
+- **Module settings** — Enable a module and expand its row to configure it
+- **After hours** — Overnight schedule, photo rendering, and immediate photo upload/deletion
+- **Access** — Optional password protection and listen port
+- **Software** — Version information, update checking, and installation
 
-Saving applies the new config and restarts the display service automatically.
+The **Modules** page manages playback order with dragging or move-up/down buttons
+that also work on phones and with a keyboard. Its Configure links open the matching
+module's settings. Disabled modules remain available but are excluded from playback.
+
+The save bar tracks unsaved changes; **Save & restart** applies all settings and
+restarts the display service. Photo uploads and deletions take effect immediately.
 
 ### Via YAML *(advanced / headless)*
 
@@ -379,7 +384,7 @@ modules:
 ## Updating
 
 ### Via the Web UI *(easiest)*
-Open the Web UI → **Software** card → **Update & Restart**.
+Open the Web UI → **Settings** → **Software** → **Update & restart**.
 
 A progress modal streams live output as the updater:
 1. Fetches and lists new commits from GitHub
@@ -422,7 +427,7 @@ journalctl -u dumb-smart-display-webui -f
 /app
   /core           # ModuleManager, Module Interface, Layout definitions
   /modules        # Content modules (one file per module)
-  /webui          # Flask configuration UI (server.py, templates/, schema.py)
+  /webui          # Flask configuration UI (server.py, templates/, static/, schema.py)
   buttons.py      # GPIO button handling
   display.py      # Display driver abstraction (hardware vs. simulator)
   main.py         # Entry point
