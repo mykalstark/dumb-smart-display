@@ -18,6 +18,10 @@ Required hooks
 Optional hooks
 ==============
 
+- ``is_empty()`` -> ``bool``: report whether there is no displayable content.
+  Return ``False`` for unknown data or errors so diagnostics remain visible.
+  The manager skips empty modules only when their ``hide_when_empty`` setting
+  is enabled. Hidden modules still receive background ticks.
 - ``refresh_interval()`` -> ``Optional[int]``: provide a hint (in seconds) for
   how frequently the module should be refreshed. Returning ``None`` disables
   the hint.
@@ -180,6 +184,9 @@ class DisplayModule(Protocol):
     def refresh_interval(self) -> Optional[int]:
         ...
 
+    def is_empty(self) -> bool:
+        ...
+
     def supported_layouts(self) -> Sequence[LayoutPreset]:
         ...
 
@@ -192,6 +199,9 @@ class BaseDisplayModule:
     """
 
     name: str = "unnamed"
+
+    def is_empty(self) -> bool:
+        return False
 
     def refresh_interval(self) -> Optional[int]:  # pragma: no cover - trivial
         return None

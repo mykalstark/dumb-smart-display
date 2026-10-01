@@ -24,7 +24,7 @@
   };
 
   function updateCount() {
-    var count = document.querySelectorAll('input[name^="modules__enabled__"]:checked, #module-list input[type="checkbox"]:checked').length;
+    var count = document.querySelectorAll('input[name^="modules__enabled__"]:checked, #module-list input[name^="module_enabled__"]:checked').length;
     document.querySelectorAll('[data-enabled-count]').forEach(function (el) { el.textContent = count; });
   }
 

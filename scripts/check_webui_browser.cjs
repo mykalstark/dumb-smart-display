@@ -172,6 +172,13 @@ process.on('exit', ()=>fixture.kill());
  assert.equal(await page.evaluate(()=>document.activeElement.textContent.includes('Update & restart')),true);
  // Desktop drag plus buttons and persisted module payload.
  await page.goto(url+'/modules');
+ assert.equal(await page.locator('input[name^="module_hide_when_empty__"]').count(),6);
+ await page.locator('#item-countdown').getByLabel('Hide when empty',{exact:true}).check();
+ await page.locator('#item-rss_feed').getByLabel('Hide when empty',{exact:true}).check();
+ assert.equal(await page.locator('[data-enabled-count]').textContent(),'3','hide options must not change enabled count');
+ assert.equal(await page.locator('#item-countdown [data-module-status]').textContent(),'Enabled');
+ assert.equal(await page.locator('#item-rss_feed [data-module-status]').textContent(),'Disabled');
+ assert.equal(await page.locator('.save-state').textContent(),'Unsaved changes');
  if (process.env.WEBUI_SCREENSHOTS) await page.screenshot({path:path.join(process.env.WEBUI_SCREENSHOTS,'modules-desktop.png')});
  await page.locator('#item-system_status').dragTo(page.locator('#item-clock'));
  assert.equal(await page.locator('#module-list .module-item').first().getAttribute('data-module'),'system_status');
@@ -181,14 +188,18 @@ process.on('exit', ()=>fixture.kill());
  assert.equal(await page.locator('#item-clock .position-badge').textContent(),'—');
  assert.equal(await page.locator('[data-enabled-count]').textContent(),'2');
  await page.getByLabel('Enable Clock',{exact:true}).check();
- const order = await page.locator('#module-list .module-item').evaluateAll(items=>items.filter(x=>x.querySelector('input[type=checkbox]').checked).map(x=>x.dataset.module));
+ const order = await page.locator('#module-list .module-item').evaluateAll(items=>items.filter(x=>x.querySelector('input[name^="module_enabled__"]').checked).map(x=>x.dataset.module));
  await Promise.all([page.waitForURL(url+'/modules'),page.getByRole('button',{name:'Save & restart',exact:true}).click()]);
- assert.deepEqual(await page.locator('#module-list .module-item').evaluateAll(items=>items.filter(x=>x.querySelector('input[type=checkbox]').checked).map(x=>x.dataset.module)),order);
+ assert.deepEqual(await page.locator('#module-list .module-item').evaluateAll(items=>items.filter(x=>x.querySelector('input[name^="module_enabled__"]').checked).map(x=>x.dataset.module)),order);
+ assert.equal(await page.locator('#item-countdown').getByLabel('Hide when empty',{exact:true}).isChecked(),true);
+ assert.equal(await page.locator('#item-rss_feed').getByLabel('Hide when empty',{exact:true}).isChecked(),true);
  await page.goto(url+'/config');
  await page.getByRole('button',{name:'Save & restart',exact:true}).click();
  await page.getByText('Settings saved. Display service restarting.').waitFor();
  await page.goto(url+'/modules');
- assert.deepEqual(await page.locator('#module-list .module-item').evaluateAll(items=>items.filter(x=>x.querySelector('input[type=checkbox]').checked).map(x=>x.dataset.module)),order);
+ assert.deepEqual(await page.locator('#module-list .module-item').evaluateAll(items=>items.filter(x=>x.querySelector('input[name^="module_enabled__"]').checked).map(x=>x.dataset.module)),order);
+ assert.equal(await page.locator('#item-countdown').getByLabel('Hide when empty',{exact:true}).isChecked(),true);
+ assert.equal(await page.locator('#item-rss_feed').getByLabel('Hide when empty',{exact:true}).isChecked(),true);
  for(const width of [320,390,768,1024,1440]) {
    await page.setViewportSize({width,height:900});
    for(const path of ['/config','/modules']) {

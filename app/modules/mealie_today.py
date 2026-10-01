@@ -27,6 +27,7 @@ class Module:
 
         self.fonts = fonts
         self.last_fetch: Optional[datetime.datetime] = None
+        self._empty: bool = False
         self.meal_details: Dict[str, Optional[Any]] = {
             "name": "You Effed up, Doordash",
             "prep": None,
@@ -171,8 +172,11 @@ class Module:
 
         if self.last_fetch is None or (now - self.last_fetch).total_seconds() > self.refresh_seconds:
             entries = self._fetch_today_mealplan()
-            if entries:
+            # None means fetch failure; an empty list is a valid empty plan.
+            self._empty = False
+            if entries is not None:
                 dinner = self._extract_dinner_details(entries)
+                self._empty = dinner is None
                 if dinner:
                     self.meal_details = {
                         "name": dinner.get("name") or "You Effed up, Doordash",
@@ -188,6 +192,9 @@ class Module:
                         "total": None,
                     }
             self.last_fetch = now
+
+    def is_empty(self) -> bool:
+        return self._empty
 
     def force_refresh(self) -> None:
         """Immediately fetch the latest meal plan data."""

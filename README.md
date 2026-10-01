@@ -346,6 +346,18 @@ module's settings. Disabled modules remain available but are excluded from playb
 The save bar tracks unsaved changes; **Save & restart** applies all settings and
 restarts the display service. Photo uploads and deletions take effect immediately.
 
+On the **Modules** page or in each module's settings, enable **Hide when empty**
+individually for TickTick, Calendar, Countdown, Mealie, RSS, or Spotify. It is off
+by default. TickTick and Calendar hide only when both today and tomorrow are
+empty; Countdown uses its configured past-event window; Mealie hides without a
+dinner plan; RSS hides without headlines; Spotify hides without a track (paused
+tracks remain visible). Hidden modules keep refreshing and automatically return
+when content appears. Errors remain visible. If every enabled module is empty
+and hidden, the display shows “No content to display.”
+
+In YAML, set `modules.settings.<module>.hide_when_empty: true` for each screen
+you want to hide automatically.
+
 ### Via YAML *(advanced / headless)*
 
 If you prefer direct file editing:

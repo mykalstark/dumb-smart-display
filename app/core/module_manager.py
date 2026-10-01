@@ -46,7 +46,7 @@ class ModuleManager:
 
     def load_modules(self) -> None:
         """Import and instantiate configured modules."""
-        to_load = self.enabled_modules or self.discover_available_modules()
+        to_load = self.discover_available_modules() if self.enabled_modules is None else self.enabled_modules
         for name in to_load:
             module_instance = self._load_single_module(name)
             if module_instance:
@@ -84,20 +84,42 @@ class ModuleManager:
     def _has_modules(self) -> bool:
         return bool(self.modules)
 
+    def _is_visible(self, module: DisplayModule) -> bool:
+        """Only hide modules that opt in and explicitly report empty content."""
+        if not self.module_config.get(module.name, {}).get("hide_when_empty", False):
+            return True
+        is_empty = getattr(module, "is_empty", None)
+        if not callable(is_empty):
+            return True
+        try:
+            return not is_empty()
+        except Exception as exc:
+            print(f"[MODULES] is_empty() failed for {module.name}: {exc}", flush=True)
+            return True
+
+    def _select_visible(self, start: int, step: int = 1) -> Optional[DisplayModule]:
+        """Search at most one cycle, keeping hidden modules loaded for ticks."""
+        for offset in range(len(self.modules)):
+            index = (start + offset * step) % len(self.modules)
+            module = self.modules[index]
+            if self._is_visible(module):
+                self._active_index = index
+                return module
+        return None
+
     def current_module(self) -> Optional[DisplayModule]:
         if not self._has_modules():
             return None
         if self._active_index is None:
             self._active_index = 0
-        return self.modules[self._active_index]
+        return self._select_visible(self._active_index)
 
     def next_module(self) -> Optional[DisplayModule]:
         if not self._has_modules():
             return None
-        if self._active_index is None:
-            self._active_index = 0
-        module = self.modules[self._active_index]
-        self._active_index = (self._active_index + 1) % len(self.modules)
+        module = self.current_module()
+        if module is not None:
+            self.activate_next()
         return module
 
     def prev_module(self) -> Optional[DisplayModule]:
@@ -105,8 +127,7 @@ class ModuleManager:
             return None
         if self._active_index is None:
             self._active_index = 0
-        self._active_index = (self._active_index - 1) % len(self.modules)
-        return self.modules[self._active_index]
+        return self._select_visible(self._active_index - 1, step=-1)
 
     def activate_next(self) -> Optional[DisplayModule]:
         """Advance to and return the next module in sequence."""
@@ -114,8 +135,7 @@ class ModuleManager:
             return None
         if self._active_index is None:
             self._active_index = 0
-        self._active_index = (self._active_index + 1) % len(self.modules)
-        return self.current_module()
+        return self._select_visible(self._active_index + 1)
 
     # ------------------------------------------------------------------
     # Button routing & background work

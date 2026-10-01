@@ -51,12 +51,14 @@ modules:
       # Override here if this module needs a different location than the global one.
       refresh_seconds: 1800    # Weather refresh cadence
     mealie_today:
+      hide_when_empty: false   # Skip when no dinner is planned; keep refreshing
       enabled: true
       base_url: "http://192.168.xx.yy:9000"     # or whatever you're using as MEALIE_BASE_URL
       api_token: "eyJhbRitE2oS2jl1EtGPk"        # your token
       refresh_seconds: 3600                     # once per hour
       target_eat_time: "18:30"                  # when dinner is expected to be ready
     ticktick:
+      hide_when_empty: false   # Skip when today and tomorrow both have no tasks
       refresh_seconds: 900
       max_items_per_day: 6
       max_title_length: 60
@@ -78,6 +80,7 @@ modules:
         timezone: "America/Denver"
 
     calendar_ics:
+      hide_when_empty: false   # Skip when today and tomorrow both have no events
       # Paste your private iCal URL from Google Calendar, Apple Calendar, Outlook, etc.
       # In Google Calendar: Settings → [calendar] → "Secret address in iCal format"
       # In Apple Calendar: Right-click calendar → "Share Calendar" → copy private link
@@ -87,6 +90,7 @@ modules:
       refresh_seconds: 900      # Re-fetch every 15 minutes
 
     rss_feed:
+      hide_when_empty: false   # Skip when the feed has no headlines
       # Any RSS or Atom feed URL. Defaults to Good News Network (uplifting news).
       feed_url: "https://www.goodnewsnetwork.org/feed/"
       max_items: 8              # Max headlines to load
@@ -94,6 +98,7 @@ modules:
       # Button "next"/"back" pages through headlines; "refresh" forces a re-fetch.
 
     countdown:
+      hide_when_empty: false   # Skip when no events fall within the date window
       # List one or more upcoming events to count down to.
       # Use YYYY-MM-DD date format.
       events:
@@ -105,6 +110,7 @@ modules:
       # Button "next"/"back" cycles between multiple events.
 
     spotify_now_playing:
+      hide_when_empty: false   # Skip when no track is available (paused tracks stay)
       # Setup instructions (one-time):
       # 1. Go to https://developer.spotify.com/dashboard and create an app.
       # 2. Add "http://localhost:8888/callback" as a Redirect URI in the app settings.

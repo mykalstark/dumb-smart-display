@@ -50,6 +50,13 @@ class Module(BaseDisplayModule):
     def refresh_interval(self) -> Optional[int]:
         return self.refresh_seconds
 
+    def is_empty(self) -> bool:
+        return (
+            self.last_fetch is not None
+            and not self.error_message
+            and not (self.today_tasks or self.tomorrow_tasks or self.today_overflow or self.tomorrow_overflow)
+        )
+
     def tick(self) -> None:
         now = dt.datetime.now(self.client.timezone)
         if self.last_fetch and (now - self.last_fetch).total_seconds() < self.refresh_seconds:

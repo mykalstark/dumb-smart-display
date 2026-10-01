@@ -38,6 +38,7 @@ from flask import (
 from app.webui.geocoding import LookupBusy, LookupUnavailable, search_places
 from app.webui.schema import (
     AFTER_HOURS_SCHEMA,
+    EMPTY_MODULE_HELP,
     HARDWARE_SCHEMA,
     LOCATION_SCHEMA,
     MODULE_ORDER,
@@ -618,6 +619,8 @@ def modules_page():  # type: ignore[no-untyped-def]
         "modules.html",
         full_order=full_order,
         enabled_set=enabled_set,
+        mod_settings=cfg.get("modules", {}).get("settings", {}),
+        empty_module_help=EMPTY_MODULE_HELP,
         module_schemas=MODULE_SCHEMAS,
         auth_required=_auth_required(),
     )
@@ -636,10 +639,15 @@ def modules_save():  # type: ignore[no-untyped-def]
             new_enabled.append(n)
     user_cfg = _load_user_config()
     user_cfg.setdefault("modules", {})["enabled"] = new_enabled
+    settings = user_cfg["modules"].setdefault("settings", {})
+    for name in EMPTY_MODULE_HELP:
+        settings.setdefault(name, {})["hide_when_empty"] = bool(
+            request.form.get(f"module_hide_when_empty__{name}")
+        )
     _write_user_config(user_cfg)
     ok, msg = _restart_service()
     flash(
-        "Module order saved. Display service restarting." if ok else f"Saved. Note: {msg}",
+        "Module settings saved. Display service restarting." if ok else f"Saved. Note: {msg}",
         "success" if ok else "warning",
     )
     return redirect(url_for("modules_page"))

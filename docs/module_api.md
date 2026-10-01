@@ -14,10 +14,11 @@ Each module should expose a `Module` class that follows the [`DisplayModule` pro
 
 ### Optional hooks
 
+- **`is_empty() -> bool`**: Report that there is no displayable content. This must be a fast check of cached data, with no fetching. Return `False` before data is known or when a fetch fails, so diagnostics stay visible. With `modules.settings.<name>.hide_when_empty: true`, the manager skips empty modules during automatic and button navigation. Hidden modules still receive `tick()` calls and return when content appears. Modules without this hook stay visible.
 - **`refresh_interval() -> Optional[int]`**: Hint (in seconds) for how often the module would like to refresh. Return `None` to defer to the default cadence.
 - **`supported_layouts() -> Sequence[LayoutPreset]`**: Advertise the layout variants that the module knows how to render. If not implemented, consumers should assume only the `"full"` preset is available.
 
-If you prefer not to reimplement optional hooks, inherit from `BaseDisplayModule` to get default implementations for `refresh_interval` and `supported_layouts`.
+If you prefer not to reimplement optional hooks, inherit from `BaseDisplayModule` to get default implementations for `is_empty` (always `False`), `refresh_interval`, and `supported_layouts`.
 
 ## Layout presets
 
