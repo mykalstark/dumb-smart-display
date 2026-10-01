@@ -143,6 +143,67 @@ class DisplayLayoutTests(unittest.TestCase):
         numbers = [int(re.match(r"(\d+)\.", text).group(1)) for text, _ in elements if re.match(r"\d+\.", text)]
         self.assertEqual(numbers, list(range(1, len(module._items) + 1)))
 
+    def test_rss_preserves_full_wrapped_titles(self):
+        title = ("Local library opens a new reading room with free activities for families "
+                 "and a community garden where neighbors can share books and learn together")
+        for width, height in ((800, 480), (640, 384), (480, 800)):
+            module = next(m for m in build_samples() if m.name == "rss_feed")
+            module._items = [{"title": title}]
+            with self.subTest(size=(width, height)):
+                elements = self.check_layout(module, width, height)
+                lines = [text for text, box in elements
+                         if box[1] >= min(theme.PAGE_HEADER_H, height // 4) + theme.OUTER_PAD
+                         and not text.startswith("Updated")]
+                self.assertGreater(len(lines), 1)
+                self.assertEqual(" ".join(lines), f"1. {title}")
+                self.assertEqual(module._total_pages(), 1)
+
+    def test_rss_pages_variable_height_articles_without_skips(self):
+        title = ("Local library opens a new reading room with free activities for families "
+                 "and a community garden where neighbors can share books and learn together")
+        titles = ["Brief local update", "Quick community news", title,
+                  "Town festival announced", title, "Weekend market opens"]
+        module = next(m for m in build_samples() if m.name == "rss_feed")
+        module._items = [{"title": title} for title in titles]
+        self.capture(module, 640, 384)
+        total_pages = module._total_pages()
+        self.assertGreater(total_pages, 1)
+        article_lines = []
+        for page in range(total_pages):
+            self.assertEqual(module._page, page)
+            elements = self.check_layout(module, 640, 384)
+            article_lines.extend(text for text, box in elements
+                                 if box[1] >= min(theme.PAGE_HEADER_H, 384 // 4) + theme.OUTER_PAD
+                                 and not text.startswith("Page"))
+            self.assertTrue(any(f"Page {page + 1} / {total_pages}" in text for text, _ in elements))
+            module.handle_button("next")
+        self.assertEqual(" ".join(article_lines),
+                         " ".join(f"{i + 1}. {title}" for i, title in enumerate(titles)))
+        self.assertEqual(module._page, 0)
+        module.handle_button("back")
+        self.assertEqual(module._page, total_pages - 1)
+        module.handle_button("prev")
+        self.assertEqual(module._page, (total_pages - 2) % total_pages)
+
+    def test_rss_oversized_title_stops_above_footer_and_next_article_is_reachable(self):
+        for width, height in ((800, 480), (320, 240)):
+            module = next(m for m in build_samples() if m.name == "rss_feed")
+            module._items = [{"title": "An exceptionally long headline with café details " * 100},
+                             {"title": "Next article"}]
+            with self.subTest(size=(width, height)):
+                elements = self.check_layout(module, width, height)
+                lines = [(text, box) for text, box in elements
+                         if box[1] >= min(theme.PAGE_HEADER_H, height // 4) + theme.OUTER_PAD
+                         and not text.startswith("Page")]
+                self.assertGreater(len(lines), 1)
+                self.assertTrue(lines[-1][0].endswith("…"))
+                footer = next(box for text, box in elements if text.startswith("Page"))
+                self.assertLess(lines[-1][1][3], footer[1])
+                self.assertEqual(module._total_pages(), 2)
+                module.handle_button("next")
+                elements = self.check_layout(module, width, height)
+                self.assertIn("2. Next article", [text for text, _ in elements])
+
     def test_calendar_and_task_lists_report_hidden_rows(self):
         for name in ("ticktick", "calendar_ics"):
             module = next(m for m in build_samples("long") if m.name == name)

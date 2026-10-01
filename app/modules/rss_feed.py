@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
 from app.core.theme import (
     LINE_SPACING, draw_text_block, draw_message, page_body, get_text_size,
-    ellipsize,
+    ellipsize, wrap_text,
 )
 
 log = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ class Module(BaseDisplayModule):
         self._items: List[Dict[str, str]] = []
         self._feed_title: str = "RSS Feed"
         self._page: int = 0
-        self._items_per_page: int = 4  # updated dynamically at render time
+        self._page_starts: List[int] = [0]  # updated dynamically at render time
         self._last_fetch: Optional[datetime] = None
         self._last_updated: Optional[datetime] = None
         self._error: Optional[str] = None
@@ -104,6 +104,7 @@ class Module(BaseDisplayModule):
             self._error = None
             self._last_updated = datetime.now()
             self._page = 0
+            self._page_starts = [0]
         except Exception as exc:
             log.warning("RSS fetch failed for %s: %s", self.feed_url, exc)
             self._error = "Feed unavailable"
@@ -114,9 +115,9 @@ class Module(BaseDisplayModule):
     # Render helpers
     # ------------------------------------------------------------------
     def _total_pages(self) -> int:
-        if not self._items or self._items_per_page <= 0:
+        if not self._items:
             return 0
-        return max(1, -(-len(self._items) // self._items_per_page))  # ceiling div
+        return len(self._page_starts)
 
     def _draw_centered(self, draw, width, height, text):
         draw_message(draw, width, height, text, self.fonts.get("default"))
@@ -141,18 +142,37 @@ class Module(BaseDisplayModule):
         small_font = self.fonts.get("small", body_font)
         footer_h = min(28, (y1 - y0) // 5)
         body_bottom = y1 - footer_h - LINE_SPACING
-        line_h = get_text_size(draw, "Ag", body_font)[1]
-        item_h = line_h + 2 * LINE_SPACING
-        self._items_per_page = max(1, (body_bottom - y0) // item_h)
+        body_h = body_bottom - y0
+        rows = []
+        self._page_starts = [0]
+        used_h = 0
+        for i, item in enumerate(self._items):
+            lines = wrap_text(draw, f"{i + 1}. {item['title']}", body_font, x1 - x0)
+            line_h = max(get_text_size(draw, line, body_font)[1] for line in ["Ag", *lines])
+            capacity = max(1, (body_h + LINE_SPACING) // (line_h + LINE_SPACING))
+            if len(lines) > capacity:
+                lines = lines[:capacity - 1] + [
+                    ellipsize(draw, " ".join(lines[capacity - 1:]), body_font, x1 - x0)
+                ]
+            row_h = len(lines) * line_h + (len(lines) - 1) * LINE_SPACING
+            if used_h + row_h > body_h and i > self._page_starts[-1]:
+                self._page_starts.append(i)
+                used_h = 0
+            rows.append((lines, line_h))
+            used_h += row_h + 2 * LINE_SPACING
+
         total_pages = self._total_pages()
         self._page %= total_pages
-        start = self._page * self._items_per_page
-        page_items = self._items[start:start + self._items_per_page]
-        for i, item in enumerate(page_items):
-            top = y0 + i * item_h
-            draw_text_block(draw, (x0, top, x1, min(top + item_h - LINE_SPACING, body_bottom)),
-                            ellipsize(draw, f"{start + i + 1}. {item['title']}", body_font, x1 - x0),
-                            body_font, align="left")
+        start = self._page_starts[self._page]
+        end = self._page_starts[self._page + 1] if self._page + 1 < total_pages else len(rows)
+        top = y0
+        for lines, line_h in rows[start:end]:
+            for line in lines:
+                draw_text_block(draw, (x0, top, x1, min(top + line_h, body_bottom)),
+                                line, body_font, align="left",
+                                min_size=getattr(body_font, "size", 12))
+                top += line_h + LINE_SPACING
+            top += LINE_SPACING
         parts = []
         if total_pages > 1:
             parts.append(f"Page {self._page + 1} / {total_pages}")
