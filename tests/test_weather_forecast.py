@@ -6,7 +6,7 @@ from unittest.mock import patch
 from PIL import Image, ImageDraw, ImageFont
 
 from app.core.theme import (
-    PAGE_HEADER_H, PAGE_HEADER_RX, PAGE_HEADER_RY, draw_page_header, fit_header_font,
+    OUTER_PAD, PAGE_HEADER_H, PAGE_HEADER_RX, PAGE_HEADER_RY, draw_page_header, fit_header_font,
 )
 from app.modules.weather_forecast import Module, _WMO_GLYPH
 
@@ -80,9 +80,12 @@ class ForecastLayoutTests(unittest.TestCase):
                                                     width - PAGE_HEADER_RX - 8, header_h - PAGE_HEADER_RY - 2))
                                 for i in range(count):
                                     column = elements[1 + i * 6:1 + (i + 1) * 6]
-                                    inset = min(8, (width // count) // 10)
-                                    container = (i * width // count + inset, header_h + 4,
-                                                 (i + 1) * width // count - inset, height - 8)
+                                    body_width = width - 2 * OUTER_PAD
+                                    inset = min(8, (body_width // count) // 10)
+                                    container = (OUTER_PAD + i * body_width // count + inset,
+                                                 header_h + OUTER_PAD,
+                                                 OUTER_PAD + (i + 1) * body_width // count - inset,
+                                                 height - OUTER_PAD)
                                     for _, box, _ in column:
                                         self.assert_inside(box, container)
                                     boxes = sorted((box for _, box, _ in column), key=lambda b: b[1])
@@ -97,7 +100,8 @@ class ForecastLayoutTests(unittest.TestCase):
         for i in range(7):
             label, box, _ = elements[1 + i * 6]
             self.assertEqual(label, module._days[i]["day"].upper())
-            self.assert_inside(box, (i * 480 // 7 + 6, 113, (i + 1) * 480 // 7 - 6, 800))
+            self.assert_inside(box, (OUTER_PAD + i * 440 // 7 + 6, 132,
+                                     OUTER_PAD + (i + 1) * 440 // 7 - 6, 780))
 
     def test_dry_days_omit_precipitation(self):
         module = self.make_module()
