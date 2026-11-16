@@ -13,7 +13,8 @@ The production systemd unit (dumb-smart-display-webui.service) runs this same en
 from __future__ import annotations
 
 import functools
-import hashlib
+import hmac
+import math
 import os
 import subprocess
 import tempfile
@@ -56,16 +57,21 @@ _DISPLAY_SERVICE = "dumb-smart-display"
 _WEBUI_SERVICE   = "dumb-smart-display-webui"
 _UPLOADS_DIR = Path(__file__).parent / "static" / "uploads"
 _AFTER_HOURS_PHOTO_STEM = "after_hours_photo"
+_UPDATE_LOCK = threading.Lock()
+_UPDATE_INSTANCE = os.urandom(16).hex()
+_INSTALL_STARTED = "[INSTALL] Dumb Smart Display installer started."
 
 # ---------------------------------------------------------------------------
 # Flask app
 # ---------------------------------------------------------------------------
 app = Flask(__name__, template_folder="templates")
 
-# The secret key is derived at request time from the configured password so
-# that changing the password automatically invalidates all old sessions.
-# We set a temporary placeholder here; _get_secret_key() is called per-request.
+# Keep the signing key stable for this process. Authentication is separately
+# bound to the current credential generation, checked on every protected route.
 app.secret_key = os.urandom(24)
+_auth_state_lock = threading.RLock()
+_auth_password: Optional[str] = None
+_auth_generation = ""
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +119,11 @@ def _write_user_config(cfg: Dict[str, Any]) -> None:
     try:
         with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
             yaml.dump(cfg, fh, allow_unicode=True, default_flow_style=False, sort_keys=False)
-        Path(tmp_path).replace(_CONFIG_PATH)
+        with _auth_state_lock:
+            Path(tmp_path).replace(_CONFIG_PATH)
+            # Observe every saved password transition, including disabling and
+            # re-enabling protection with the same password between requests.
+            _authentication_state()
     except Exception:
         try:
             os.unlink(tmp_path)
@@ -215,10 +225,10 @@ def _do_git_pull() -> Tuple[bool, str]:
 
 
 def _get_head_commit() -> str:
-    """Return the current HEAD commit short hash, or empty string on failure."""
+    """Return the full HEAD commit hash, or empty string on failure."""
     try:
         result = subprocess.run(
-            _git("rev-parse", "--short", "HEAD"),
+            _git("rev-parse", "HEAD"),
             capture_output=True, text=True, timeout=5, cwd=str(_ROOT),
         )
         return result.stdout.strip() if result.returncode == 0 else ""
@@ -253,8 +263,11 @@ def _pip_install() -> Tuple[bool, str]:
 
     req = _ROOT / "requirements.txt"
     try:
+        command = [str(pip), "install", "-q", "-r", str(req)]
+        if getattr(os, "geteuid", lambda: -1)() == 0:
+            command = ["sudo", "-n", "-H", "-u", _application_user(), "--", *command]
         result = subprocess.run(
-            [str(pip), "install", "-q", "-r", str(req)],
+            command,
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode == 0:
@@ -267,20 +280,20 @@ def _pip_install() -> Tuple[bool, str]:
 
 
 def _schedule_restart(service: str, delay_secs: float = 2.0) -> None:
-    """
-    Restart *service* after *delay_secs* in a background daemon thread.
-    The delay allows the current HTTP response to be flushed to the browser
-    before the process is killed.
-    """
+    """Flush the response before restarting; retain errors for the status poll."""
     def _worker() -> None:
         time.sleep(delay_secs)
         try:
-            subprocess.run(
-                ["sudo", "systemctl", "restart", service],
-                capture_output=True, timeout=15,
+            result = subprocess.run(
+                ["sudo", "-n", "systemctl", "restart", service],
+                capture_output=True, text=True, timeout=15,
             )
-        except Exception:
-            pass
+            if result.returncode:
+                raise RuntimeError(result.stderr.strip() or "Service restart failed")
+        except Exception as exc:
+            state = _read_update_state()
+            state.update(phase="failed", error=f"Web UI restart failed: {exc}")
+            _write_update_state(state)
 
     threading.Thread(target=_worker, daemon=True).start()
 
@@ -294,31 +307,39 @@ def _configured_password() -> str:
     return str(cfg.get("webui", {}).get("password", "") or "")
 
 
-def _get_secret_key(password: str) -> str:
-    if not password:
-        return "no-auth-placeholder-key"
-    return hashlib.sha256(password.encode()).hexdigest()
+def _authentication_state() -> Tuple[str, str]:
+    """Read credentials and rotate the opaque generation when they change."""
+    global _auth_password, _auth_generation
+    with _auth_state_lock:
+        password = _configured_password()
+        if password != _auth_password:
+            _auth_password = password
+            _auth_generation = os.urandom(32).hex()
+        return password, _auth_generation
 
 
 def _auth_required() -> bool:
-    return bool(_configured_password())
+    return bool(_authentication_state()[0])
 
 
-def _check_password(candidate: str) -> bool:
-    configured = _configured_password()
-    if not configured:
-        return True
-    return candidate == configured
+def _check_password(candidate: str, configured: str) -> bool:
+    return hmac.compare_digest(candidate.encode("utf-8"), configured.encode("utf-8"))
 
 
 def login_required(f):  # type: ignore[no-untyped-def]
     @functools.wraps(f)
     def decorated(*args, **kwargs):  # type: ignore[no-untyped-def]
-        if _auth_required():
-            pw = _configured_password()
-            app.secret_key = _get_secret_key(pw)
-            if not session.get("authenticated"):
+        password, generation = _authentication_state()
+        if password:
+            saved_generation = session.get("auth_generation")
+            if (session.get("authenticated") is not True
+                    or not isinstance(saved_generation, str)
+                    or not hmac.compare_digest(saved_generation, generation)):
+                session.clear()
                 return redirect(url_for("login"))
+        else:
+            session.pop("authenticated", None)
+            session.pop("auth_generation", None)
         return f(*args, **kwargs)
     return decorated
 
@@ -353,14 +374,24 @@ def _get_nested(d: Dict[str, Any], dot_path: str, default: Any = None) -> Any:
     return d if d != {} else default
 
 
-def _coerce_field(raw: str, field_type: str) -> Any:
-    """Convert a raw form string to the appropriate Python type."""
+def _coerce_field(raw: str, field_type: str, field: Optional[Dict[str, Any]] = None) -> Any:
+    """Convert a submitted value, rejecting unsafe numeric configuration."""
     if field_type == "number":
+        field = field or {}
+        label = field.get("label", "Value")
         try:
             f = float(raw)
-            return int(f) if f == int(f) else f
         except (ValueError, TypeError):
-            return raw
+            raise ValueError(f"{label}: enter a number; this field cannot be blank.") from None
+        if not math.isfinite(f):
+            raise ValueError(f"{label}: enter a finite number.")
+        if field.get("step") != "any" and not f.is_integer():
+            raise ValueError(f"{label}: enter a whole number.")
+        if "min" in field and f < field["min"]:
+            raise ValueError(f"{label}: must be at least {field['min']}.")
+        if "max" in field and f > field["max"]:
+            raise ValueError(f"{label}: must be at most {field['max']}.")
+        return int(f) if f.is_integer() else f
     if field_type == "toggle":
         return raw in ("true", "on", "1", "yes")
     return raw
@@ -412,7 +443,7 @@ def _parse_form(form: Any) -> Dict[str, Any]:  # noqa: ANN001
             else:
                 raw = form.get(form_key)
                 if raw is not None:
-                    _set_nested(mod_cfg, key, _coerce_field(raw, ftype))
+                    _set_nested(mod_cfg, key, _coerce_field(raw, ftype, field))
 
         if mod_cfg:
             module_settings[mod_name] = mod_cfg
@@ -425,7 +456,7 @@ def _parse_form(form: Any) -> Dict[str, Any]:  # noqa: ANN001
         key = field["key"]
         raw = form.get(f"location__{key}")
         if raw is not None:
-            _set_nested(loc, key, _coerce_field(raw, field["type"]))
+            _set_nested(loc, key, _coerce_field(raw, field["type"], field))
     if loc:
         cfg["location"] = loc
 
@@ -438,7 +469,7 @@ def _parse_form(form: Any) -> Dict[str, Any]:  # noqa: ANN001
         if ftype == "toggle":
             _set_nested(hw, key, form.get(f"hardware__{key}", "off") in ("on", "true", "1", "yes"))
         elif raw is not None:
-            _set_nested(hw, key, _coerce_field(raw, ftype))
+            _set_nested(hw, key, _coerce_field(raw, ftype, field))
 
     # ---- After Hours (nested under hardware.after_hours) ----
     ah: Dict[str, Any] = {}
@@ -451,7 +482,7 @@ def _parse_form(form: Any) -> Dict[str, Any]:  # noqa: ANN001
         else:
             raw = form.get(form_key)
             if raw is not None:
-                _set_nested(ah, key, _coerce_field(raw, ftype))
+                _set_nested(ah, key, _coerce_field(raw, ftype, field))
     if ah:
         hw.setdefault("after_hours", {}).update(ah)
 
@@ -465,7 +496,7 @@ def _parse_form(form: Any) -> Dict[str, Any]:  # noqa: ANN001
         ftype = field["type"]
         raw = form.get(f"webui__{key}")
         if raw is not None:
-            _set_nested(webui, key, _coerce_field(raw, ftype))
+            _set_nested(webui, key, _coerce_field(raw, ftype, field))
     if webui:
         cfg["webui"] = webui
 
@@ -492,16 +523,17 @@ def index():  # type: ignore[no-untyped-def]
 
 @app.route("/login", methods=["GET", "POST"])
 def login():  # type: ignore[no-untyped-def]
-    if not _auth_required():
+    password, generation = _authentication_state()
+    if not password:
         return redirect(url_for("config_page"))
 
     error: Optional[str] = None
     if request.method == "POST":
         candidate = request.form.get("password", "")
-        pw = _configured_password()
-        app.secret_key = _get_secret_key(pw)
-        if _check_password(candidate):
+        if _check_password(candidate, password):
+            session.clear()
             session["authenticated"] = True
+            session["auth_generation"] = generation
             return redirect(url_for("config_page"))
         error = "Incorrect password."
 
@@ -534,6 +566,7 @@ def location_search():
 @app.route("/config", methods=["GET"])
 @login_required
 def config_page():  # type: ignore[no-untyped-def]
+    _confirm_pending_update(notify=True)
     cfg = _load_merged_config()
 
     enabled_set = set(cfg.get("modules", {}).get("enabled") or [])
@@ -573,9 +606,10 @@ def config_save():  # type: ignore[no-untyped-def]
     # Preserve the custom module order set on the Modules page.
     # _parse_form rebuilds enabled from MODULE_ORDER iteration; we fix that here
     # so toggling modules on the Settings page never resets the drag order.
-    existing_enabled = existing_user.get("modules", {}).get("enabled") or []
+    existing_enabled = _deep_merge(_load_example_config(), existing_user).get("modules", {}).get("enabled") or []
     new_enabled_set  = set(new_cfg.get("modules", {}).get("enabled") or [])
-    preserved = [n for n in existing_enabled if n in new_enabled_set]
+    # Custom modules have no form controls, so their enabled state is unchanged.
+    preserved = [n for n in existing_enabled if n not in MODULE_ORDER or n in new_enabled_set]
     for n in MODULE_ORDER:
         if n in new_enabled_set and n not in preserved:
             preserved.append(n)
@@ -632,12 +666,26 @@ def modules_save():  # type: ignore[no-untyped-def]
     ordered     = request.form.getlist("module_order")   # names in drag order
     enabled_set = {n for n in MODULE_ORDER if request.form.get(f"module_enabled__{n}")}
     # Build new enabled list: ordered names that are enabled
-    new_enabled = [n for n in ordered if n in enabled_set]
+    new_enabled = list(dict.fromkeys(n for n in ordered if n in enabled_set))
     # Safety: add any enabled modules missing from the dragged list
     for n in MODULE_ORDER:
         if n in enabled_set and n not in new_enabled:
             new_enabled.append(n)
     user_cfg = _load_user_config()
+    existing_enabled = _deep_merge(_load_example_config(), user_cfg).get("modules", {}).get("enabled") or []
+    # The order form only contains built-in modules. Keep custom modules in
+    # their existing slots while applying the requested order to built-ins.
+    remaining = iter(new_enabled)
+    preserved = []
+    for name in existing_enabled:
+        if name not in MODULE_ORDER:
+            preserved.append(name)
+        else:
+            replacement = next(remaining, None)
+            if replacement is not None:
+                preserved.append(replacement)
+    preserved.extend(remaining)
+    new_enabled = preserved
     user_cfg.setdefault("modules", {})["enabled"] = new_enabled
     settings = user_cfg["modules"].setdefault("settings", {})
     for name in EMPTY_MODULE_HELP:
@@ -715,150 +763,271 @@ def after_hours_delete():  # type: ignore[no-untyped-def]
 # ---------------------------------------------------------------------------
 
 def _sse(data: str = "", event: str = "") -> str:
-    """Format a single Server-Sent Event message."""
-    msg = ""
-    if event:
-        msg += f"event: {event}\n"
-    msg += f"data: {data}\n\n"
-    return msg
+    """Format multiline output as a single Server-Sent Event."""
+    prefix = f"event: {event}\n" if event else ""
+    return prefix + "".join(f"data: {line}\n" for line in data.split("\n")) + "\n"
 
 
-# ---------------------------------------------------------------------------
-# Update routes
-# ---------------------------------------------------------------------------
+def _update_state_path() -> Path:
+    return _CONFIG_PATH.parent / ".update-state.yml"
+
+
+def _read_update_state() -> Dict[str, Any]:
+    path = _update_state_path()
+    if not path.exists():
+        return {}
+    with path.open(encoding="utf-8") as handle:
+        state = yaml.safe_load(handle)
+    if not isinstance(state, dict):
+        raise ValueError("Invalid pending update state; inspect config/.update-state.yml")
+    return state
+
+
+def _write_update_state(state: Dict[str, Any]) -> None:
+    path = _update_state_path()
+    owner = None
+    if getattr(os, "geteuid", lambda: -1)() == 0:
+        import pwd
+
+        account = pwd.getpwnam(_application_user())
+        owner = (account.pw_uid, account.pw_gid)
+    parent_existed = path.parent.exists()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if owner and not parent_existed:
+        os.chown(path.parent, *owner)
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".update-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            if owner:
+                os.fchown(handle.fileno(), *owner)
+            yaml.safe_dump(state, handle)
+        Path(temporary).replace(path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def _display_service_active() -> bool:
+    try:
+        result = subprocess.run(
+            ["systemctl", "is-active", "--quiet", _DISPLAY_SERVICE],
+            capture_output=True, timeout=5,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _application_user() -> str:
+    """Keep the deployed account, including when repairing an old root update."""
+    import pwd  # Only the Linux installer needs this; the web UI runs on PCs too.
+
+    result = subprocess.run(
+        ["systemctl", "show", "--property=User", "--value", _WEBUI_SERVICE],
+        capture_output=True, text=True, timeout=5,
+    )
+    user = result.stdout.strip() if result.returncode == 0 else ""
+    if not user:
+        user = pwd.getpwuid(os.geteuid()).pw_name
+    if user == "root":
+        # Older updater versions silently rewrote the units as root. The checkout
+        # owner remains the original app account in that case.
+        user = pwd.getpwuid(_ROOT.stat().st_uid).pw_name
+    account = pwd.getpwuid(int(user)) if user.isdecimal() else pwd.getpwnam(user)
+    if account.pw_uid == 0:
+        raise RuntimeError("Cannot determine a non-root app user; run install.sh with APP_USER set.")
+    return account.pw_name
+
+
+def _system_install_changed(base: str, head: str) -> bool:
+    result = subprocess.run(
+        _git("diff", "--quiet", base, head, "--", "scripts/install.sh", "systemd"),
+        capture_output=True, timeout=10, cwd=str(_ROOT),
+    )
+    if result.returncode not in (0, 1):
+        raise RuntimeError("Could not check whether system installation changed.")
+    return result.returncode == 1
+
+
+def _run_install(base: str, head: str):
+    """Yield log lines, then return success; never hide an installer failure."""
+    def python_only():
+        receipt = _CONFIG_PATH.parent / ".system-install-revision"
+        installed_revision = receipt.read_text(encoding="utf-8").strip() if receipt.exists() else ""
+        if _system_install_changed(base, head) and installed_revision != head:
+            yield "This update changes system installation. Run ./scripts/install.sh over SSH, then retry."
+            return False
+        yield "System installer permission unavailable; system files are unchanged or already installed. Installing Python dependencies only."
+        ok, message = _pip_install()
+        yield message
+        return ok
+
+    install_args = ["bash", str(_ROOT / "scripts" / "install.sh"), "--update",
+                    "--app-user", _application_user()]
+    try:
+        allowed = subprocess.run(
+            ["sudo", "-n", "-l", *install_args], capture_output=True, text=True, timeout=5,
+        ).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        allowed = False
+    if not allowed:
+        return (yield from python_only())
+
+    proc = subprocess.Popen(
+        ["sudo", "-n", *install_args], stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, text=True, cwd=str(_ROOT),
+        env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"},
+    )
+    started = False
+    try:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            if line.rstrip("\n") == _INSTALL_STARTED:
+                started = True
+                continue
+            if line.rstrip("\n"):
+                yield line.rstrip("\n")
+        proc.wait()
+    finally:
+        if proc.stdout is not None:
+            proc.stdout.close()
+        if proc.poll() is None:
+            proc.terminate()
+            proc.wait()
+    if proc.returncode:
+        if not started:
+            # sudo -l may allow listing password-required commands. A marker
+            # emitted by the script distinguishes a denied launch from a real
+            # installation failure, which must never use the pip fallback.
+            return (yield from python_only())
+        yield f"Install script exited with code {proc.returncode}. Services were not restarted. Retry after correcting the error."
+        return False
+    return True
+
+
+def _run_update():
+    """Shared update transaction for the streaming and no-JavaScript routes."""
+    if not _UPDATE_LOCK.acquire(blocking=False):
+        yield "fail", "An update is already running."
+        return
+    state: Dict[str, Any] = {}
+    try:
+        _confirm_pending_update()
+        previous = _read_update_state()
+        if previous.get("phase") == "restarting" and previous.get("instance") == _UPDATE_INSTANCE:
+            yield "fail", "The web UI restart has already been requested. Wait for it to finish."
+            return
+        yield "stage", "1"
+        yield "", "Checking for updates…"
+        fetch_ok, pending, error = _fetch_pending_commits()
+        if not fetch_ok:
+            yield "fail", f"Could not check for updates: {error}"
+            return
+        yield "", f"Found {len(pending)} pending commits."
+        yield "stage", "2"
+        before = _get_head_commit()
+        if not before:
+            yield "fail", "Could not identify the current commit."
+            return
+        state = {"base": previous.get("base", before), "head": before, "phase": "install"}
+        # Save before moving HEAD, so a failed or interrupted installation can
+        # be retried even when git subsequently reports 'already up to date'.
+        _write_update_state(state)
+        if _get_current_branch() != "main":
+            checkout = subprocess.run(
+                _git("checkout", "main"), capture_output=True, text=True,
+                timeout=10, cwd=str(_ROOT),
+            )
+            if checkout.returncode:
+                yield "fail", checkout.stderr.strip() or "Could not switch to main."
+                return
+        pulled, message = _do_git_pull()
+        yield "", message
+        if not pulled:
+            yield "fail", "Update stopped before installation."
+            return
+        head = _get_head_commit()
+        if not head:
+            yield "fail", "Could not identify the updated commit."
+            return
+        if before == head and not previous:
+            if pending:
+                yield "fail", "Pending commits remain, but HEAD did not advance. Inspect git status."
+            else:
+                _update_state_path().unlink(missing_ok=True)
+                yield "uptodate", "Already up to date."
+            return
+        state["head"] = head
+        _write_update_state(state)
+        yield "stage", "3"
+        yield "", "Installing update dependencies…"
+        installer = _run_install(state["base"], head)
+        while True:
+            try:
+                yield "", next(installer)
+            except StopIteration as finished:
+                installed = finished.value
+                break
+        if not installed:
+            yield "fail", "Installation failed. The update remains pending and can be retried."
+            return
+        yield "stage", "4"
+        ok, message = _restart_service()
+        yield "", message
+        if not ok or not _display_service_active():
+            yield "fail", "Display service did not restart successfully. The update remains pending."
+            return
+        yield "stage", "5"
+        state.update(phase="restarting", instance=_UPDATE_INSTANCE)
+        _write_update_state(state)
+        _schedule_restart(_WEBUI_SERVICE, delay_secs=3.0)
+        yield "restarting", _UPDATE_INSTANCE
+    except Exception as exc:
+        yield "fail", f"Update failed: {exc}. Retry after correcting the error."
+    finally:
+        _UPDATE_LOCK.release()
+
 
 @app.route("/update/stream")
 @login_required
-def update_stream():  # type: ignore[no-untyped-def]
-    """
-    Server-Sent Events endpoint that runs the full update sequence and streams
-    progress to the browser:
-      1. git fetch + report pending commits
-      2. git pull --ff-only origin main
-      3. scripts/install.sh  (run with sudo -n; output is streamed live)
-      4. Restart display service
-      5. Restart web UI service (scheduled; page auto-reloads)
-    """
-    def generate():  # type: ignore[no-untyped-def]
-        # --- Stage 1: fetch ---
-        yield _sse("Checking for updates…")
-        yield _sse("1", event="stage")
-
-        fetch_ok, pending, err = _fetch_pending_commits()
-        if not fetch_ok:
-            yield _sse(f"Error reaching GitHub: {err}")
-            yield _sse(event="fail")
-            return
-
-        count = len(pending)
-        if count:
-            yield _sse(f"Found {count} new commit{'s' if count != 1 else ''}.")
-            for c in pending[:5]:
-                yield _sse(f"  • {c}")
-            if count > 5:
-                yield _sse(f"  … and {count - 5} more")
-        else:
-            yield _sse("No new commits found via fetch.")
-
-        # --- Stage 2: pull ---
-        yield _sse("Pulling latest code…")
-        yield _sse("2", event="stage")
-
-        branch = _get_current_branch()
-        yield _sse(f"Current branch: {branch}")
-        if branch != "main":
-            yield _sse(f"⚠ Warning: not on 'main' branch — switching to main…")
-            chk = subprocess.run(
-                _git("checkout", "main"),
-                capture_output=True, text=True, timeout=10, cwd=str(_ROOT),
-            )
-            if chk.returncode != 0:
-                yield _sse(f"✗ Could not switch to main: {chk.stderr.strip()}")
-                yield _sse(event="fail")
-                return
-            yield _sse("Switched to branch 'main'.")
-
-        head_before = _get_head_commit()
-        pull_ok, pull_msg = _do_git_pull()
-        yield _sse(pull_msg)
-        if not pull_ok:
-            yield _sse(event="fail")
-            return
-
-        head_after = _get_head_commit()
-        actually_pulled = head_before and head_after and head_before != head_after
-
-        # If HEAD didn't advance, nothing was actually applied.
-        if not actually_pulled:
-            if count == 0:
-                # Genuinely up to date — no commits were pending.
-                yield _sse(event="uptodate")
-            else:
-                # Fetch showed pending commits but pull didn't advance HEAD.
-                yield _sse(
-                    f"✗ git pull reported success but HEAD did not advance "
-                    f"(still at {head_after}). "
-                    f"The local repository may have diverged from origin/main."
-                )
-                yield _sse("Run 'git status' on the Pi to investigate.")
-                yield _sse(event="fail")
-            return
-
-        yield _sse(f"Updated: {head_before} → {head_after}")
-
-        # --- Stage 3: install script ---
-        yield _sse("Running install script…")
-        yield _sse("3", event="stage")
-
-        install_sh = _ROOT / "scripts" / "install.sh"
-        try:
-            proc = subprocess.Popen(
-                ["sudo", "-n", "bash", str(install_sh)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                cwd=str(_ROOT),
-                env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"},
-            )
-            assert proc.stdout is not None
-            for line in proc.stdout:
-                stripped = line.rstrip("\n")
-                if stripped:
-                    yield _sse(stripped)
-            proc.wait()
-            if proc.returncode != 0:
-                yield _sse(f"Install script exited with code {proc.returncode}.")
-                # Fall back to pip-only install so new Python deps are covered
-                yield _sse("Falling back to pip install…")
-                pip_ok, pip_msg = _pip_install()
-                yield _sse(pip_msg)
-        except Exception as exc:
-            yield _sse(f"Install script error: {exc}")
-            yield _sse("Falling back to pip install…")
-            pip_ok, pip_msg = _pip_install()
-            yield _sse(pip_msg)
-
-        # --- Stage 4: restart display service ---
-        yield _sse("Restarting display service…")
-        yield _sse("4", event="stage")
-
-        ok, msg = _restart_service()
-        yield _sse(msg)
-
-        # --- Stage 5: restart web UI service ---
-        yield _sse("Restarting web UI service…")
-        yield _sse("5", event="stage")
-
-        _schedule_restart(_WEBUI_SERVICE, delay_secs=3.0)
-        yield _sse("Web UI service restarting — this page will reload automatically.")
-
-        yield _sse(event="success")
-
+def update_stream():
     return Response(
-        generate(),
+        (_sse(data, event) for event, data in _run_update()),
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.route("/update/status")
+@login_required
+def update_status():
+    """Confirm the new web process and display are available after restart."""
+    return jsonify(_confirm_pending_update())
+
+
+def _confirm_pending_update(notify: bool = False) -> Dict[str, str]:
+    """Also called after login, since a restart invalidates old session cookies."""
+    try:
+        state = _read_update_state()
+    except (OSError, ValueError, yaml.YAMLError):
+        error = "Could not read pending update state; inspect config/.update-state.yml."
+        if notify:
+            flash(error, "warning")
+        return {"instance": _UPDATE_INSTANCE, "phase": "failed", "error": error}
+    phase = state.get("phase", "complete")
+    if phase == "restarting" and state.get("instance") != _UPDATE_INSTANCE:
+        if state.get("head") == _get_head_commit() and _display_service_active():
+            _update_state_path().unlink(missing_ok=True)
+            phase = "complete"
+            if notify:
+                flash("Update complete. The display and control panel are available.", "success")
+        else:
+            phase = "failed"
+            state.update(phase=phase, error="Display health check failed. Retry the pending update.")
+            _write_update_state(state)
+            if notify:
+                flash(state["error"], "error")
+    return {"instance": _UPDATE_INSTANCE, "phase": phase,
+            "error": state.get("error", "")}
 
 
 @app.route("/update/check")
@@ -885,51 +1054,15 @@ def update_check():  # type: ignore[no-untyped-def]
 
 @app.route("/update", methods=["POST"])
 @login_required
-def do_update():  # type: ignore[no-untyped-def]
-    """
-    Pull the latest code from origin, reinstall any new dependencies, then
-    restart both services.  The web UI service restart is delayed slightly so
-    the redirect response reaches the browser before the process is killed.
-    """
-    # 1. Fetch and collect pending commits (for the summary message only).
-    fetch_ok, pending, err = _fetch_pending_commits()
-
-    if not fetch_ok:
-        flash(f"Update failed — could not reach GitHub: {err}", "error")
-        return redirect(url_for("config_page"))
-
-    count = len(pending)
-
-    # 2. Pull regardless of whether the pending list is empty — the fetch may
-    #    have missed commits if origin/HEAD was stale, and git pull is safe
-    #    when already up to date.
-    pull_ok, pull_msg = _do_git_pull()
-    if not pull_ok:
-        flash(f"git pull failed: {pull_msg}", "error")
-        return redirect(url_for("config_page"))
-
-    # If pull reports already up to date and we saw no pending commits, skip
-    # the service restart — nothing changed.
-    if count == 0 and "already up to date" in pull_msg.lower():
-        flash("Already up to date — nothing to pull.", "success")
-        return redirect(url_for("config_page"))
-
-    # 3. Reinstall dependencies (handles new packages added by the update).
-    _pip_install()   # best-effort; failures don't block the restart
-
-    # 4. Restart the display service immediately.
-    _restart_service()
-
-    # 5. Schedule the web UI service restart after a short delay so this HTTP
-    #    response (the redirect) can be flushed to the browser first.
-    _schedule_restart(_WEBUI_SERVICE, delay_secs=2.0)
-
-    flash(
-        f"Updated! Pulled {count} new commit{'s' if count != 1 else ''}. "
-        "Both services are restarting — this page will be back in a few seconds. "
-        "Refresh if it does not reload automatically.",
-        "success",
-    )
+def do_update():
+    """Run the same validated update stages when JavaScript is unavailable."""
+    for event, message in _run_update():
+        if event == "fail":
+            flash(message, "error")
+        elif event == "uptodate":
+            flash(message, "success")
+        elif event == "restarting":
+            flash("Dependencies installed and display restarted. Web UI restart requested; refresh shortly.", "warning")
     return redirect(url_for("config_page"))
 
 

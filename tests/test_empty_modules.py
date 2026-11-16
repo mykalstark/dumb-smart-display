@@ -103,7 +103,7 @@ class NavigationTests(unittest.TestCase):
             module.empty = module.ticks == 1
 
         module.tick = tick
-        display = MagicMock(driver=SimpleNamespace(width=800, height=480), simulate=True)
+        display = MagicMock(width=800, height=480, simulate=True)
         args = SimpleNamespace(config="unused.yml", simulate=True, cycles=2)
         with patch.object(main, "parse_args", return_value=args), \
              patch.object(main, "load_config", return_value={"hardware": {"cycle_seconds": 0}}), \
@@ -190,6 +190,7 @@ class EmptyStateTests(unittest.TestCase):
         self.assertFalse(module.is_empty())
         parsed = SimpleNamespace(bozo=False, feed=SimpleNamespace(title="News"), entries=[])
         with patch.object(rss_feed, "_FEEDPARSER_AVAILABLE", True), \
+             patch.object(rss_feed.requests, "get", return_value=MagicMock(content=b"feed", headers={})), \
              patch.object(rss_feed, "feedparser", SimpleNamespace(parse=MagicMock(return_value=parsed)), create=True) as parser:
             module.tick()
             self.assertTrue(module.is_empty())

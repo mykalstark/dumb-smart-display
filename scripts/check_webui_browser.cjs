@@ -170,6 +170,28 @@ process.on('exit', ()=>fixture.kill());
  await page.keyboard.press('Escape');
  assert.equal(await page.locator('#upd-modal').isVisible(),false);
  assert.equal(await page.evaluate(()=>document.activeElement.textContent.includes('Update & restart')),true);
+ // A restart is only complete after a new web process and healthy display reply.
+ await page.unroute('**/update/stream');
+ await page.route('**/update/stream',route=>route.fulfill({status:200,contentType:'text/event-stream',body:'event: restarting\ndata: previous-process\n\n'}));
+ let statusPolls = 0;
+ await page.route('**/update/status',route=>{
+   statusPolls++;
+   return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(statusPolls === 1 ?
+     {instance:'previous-process',phase:'restarting'} : {instance:'new-process',phase:'complete'})});
+ });
+ const pendingStatus = page.waitForResponse('**/update/status');
+ await page.getByRole('button',{name:'Update & restart',exact:true}).click();
+ await pendingStatus;
+ assert.equal(await page.locator('#upd-bar').getAttribute('class'),'upd-bar');
+ await page.waitForEvent('domcontentloaded');
+ assert.equal(statusPolls,2);
+ await page.unroute('**/update/status');
+ await page.route('**/update/status',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({instance:'previous-process',phase:'failed',error:'Restart command failed'})}));
+ await page.getByRole('tab',{name:'Software',exact:true}).click();
+ await page.getByRole('button',{name:'Update & restart',exact:true}).click();
+ await page.getByText('Restart command failed',{exact:true}).waitFor();
+ assert.equal(await page.locator('#upd-bar').getAttribute('class'),'upd-bar err');
+ await page.getByRole('button',{name:'Close',exact:true}).click();
  // Desktop drag plus buttons and persisted module payload.
  await page.goto(url+'/modules');
  assert.equal(await page.locator('input[name^="module_hide_when_empty__"]').count(),6);
@@ -236,6 +258,12 @@ process.on('exit', ()=>fixture.kill());
  await page.getByRole('button',{name:'Sign in',exact:true}).click();
  await page.getByRole('heading',{name:'Settings',exact:true}).waitFor();
  assert.equal(await page.getByRole('link',{name:'Sign out',exact:true}).isVisible(),true);
+ // Restarted password-protected processes can require a fresh login.
+ await page.unroute('**/update/status');
+ await page.route('**/update/status',route=>route.fulfill({status:302,headers:{location:url+'/logout'}}));
+ await page.getByRole('tab',{name:'Software',exact:true}).click();
+ await page.getByRole('button',{name:'Update & restart',exact:true}).click();
+ await page.getByRole('heading',{name:'Welcome back.'}).waitFor();
  // The simulated provider outage intentionally produces one HTTP 502 diagnostic.
  const expectedOutage = 'Failed to load resource: the server responded with a status of 502 (Bad Gateway)';
  assert.equal(errors.filter(message=>message===expectedOutage).length,1);

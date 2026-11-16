@@ -1,9 +1,45 @@
 #!/bin/bash
 set -e
+echo "[INSTALL] Dumb Smart Display installer started."
 
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="${APP_DIR:-$(realpath "${_SCRIPT_DIR}/..")}"
-APP_USER="${APP_USER:-$(whoami)}"
+UPDATE_ONLY=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --update) UPDATE_ONLY=1; shift ;;
+    --app-user)
+      if [ "$#" -lt 2 ]; then echo "--app-user requires a user" >&2; exit 1; fi
+      APP_USER="$2"; shift 2 ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+
+# A privileged invocation must retain the deployed service account. Never
+# interpret sudo's effective root account as the application identity.
+if [ -z "${APP_USER:-}" ]; then
+  if [ "$(id -u)" -ne 0 ]; then
+    APP_USER="$(id -un)"
+  else
+    APP_USER="$(systemctl show --property=User --value dumb-smart-display-webui 2>/dev/null || true)"
+    if [ -z "$APP_USER" ] || [ "$APP_USER" = root ]; then
+      APP_USER="${SUDO_USER:-$(stat -c '%U' "$APP_DIR")}"
+    fi
+  fi
+fi
+APP_UID="$(id -u -- "$APP_USER")"
+if [ "$APP_UID" -eq 0 ]; then
+  echo "Set APP_USER to the non-root account that owns this installation." >&2
+  exit 1
+fi
+
+as_app() {
+  if [ "$(id -u)" -eq "$APP_UID" ]; then
+    "$@"
+  else
+    sudo -H -u "$APP_USER" -- "$@"
+  fi
+}
 SERVICE_NAME="dumb-smart-display.service"
 SERVICE_PATH="/etc/systemd/system/${SERVICE_NAME}"
 SERVICE_TEMPLATE_PATH="${APP_DIR}/systemd/dumb-smart-display.service"
@@ -40,33 +76,33 @@ else
 fi
 
 echo "[INSTALL] Creating local lib folder..."
-mkdir -p "${LIB_DIR}"
+as_app mkdir -p "${LIB_DIR}"
 
 # -----------------------------------------------------------------------------
 # 1. Download Waveshare Library (Sparse Checkout)
 # -----------------------------------------------------------------------------
 if [ ! -d "${WAVESHARE_LIB_DIR}" ]; then
   echo "[INSTALL] Fetching Waveshare e-Paper Python library into ./lib/waveshare_epd..."
-  TMP_DIR="$(mktemp -d)"
+  TMP_DIR="$(as_app mktemp -d)"
   
   # Sparse checkout to save disk space
   echo "[INSTALL] Performing sparse checkout..."
   pushd "${TMP_DIR}" > /dev/null
-  git init e-Paper
+  as_app git init e-Paper
   cd e-Paper
-  git remote add origin https://github.com/waveshare/e-Paper.git
-  git config core.sparseCheckout true
+  as_app git remote add origin https://github.com/waveshare/e-Paper.git
+  as_app git config core.sparseCheckout true
   
   # Tell git exactly which folder we want
-  echo "RaspberryPi_JetsonNano/python/lib/waveshare_epd" >> .git/info/sparse-checkout
+  echo "RaspberryPi_JetsonNano/python/lib/waveshare_epd" | as_app tee .git/info/sparse-checkout > /dev/null
   
   # Pull only that folder (depth 1 for speed)
-  git pull --depth=1 origin master
+  as_app git pull --depth=1 origin master
   popd > /dev/null
 
   # Copy the library to our local folder
-  cp -r "${TMP_DIR}/e-Paper/RaspberryPi_JetsonNano/python/lib/waveshare_epd" "${LIB_DIR}/"
-  rm -rf "${TMP_DIR}"
+  as_app cp -r "${TMP_DIR}/e-Paper/RaspberryPi_JetsonNano/python/lib/waveshare_epd" "${LIB_DIR}/"
+  as_app rm -rf "${TMP_DIR}"
 else
   echo "[INSTALL] waveshare_epd already exists — skipping clone."
 fi
@@ -84,7 +120,7 @@ if [ -f "${CONFIG_FILE}" ]; then
       echo "[INSTALL] Found 'RST_PIN = 17'. Patching to 5..."
       
       # Use sed to replace 17 with 5 on lines matching RST_PIN
-      sed -i 's/RST_PIN[[:space:]]*=[[:space:]]*17/RST_PIN = 5/g' "${CONFIG_FILE}"
+      as_app sed -i 's/RST_PIN[[:space:]]*=[[:space:]]*17/RST_PIN = 5/g' "${CONFIG_FILE}"
       
       # Verify the patch
       if grep -q "RST_PIN = 5" "${CONFIG_FILE}"; then
@@ -110,14 +146,12 @@ fi
 # -----------------------------------------------------------------------------
 echo "[INSTALL] Creating virtualenv..."
 if [ ! -d ".venv" ]; then
-    python3 -m venv .venv
+    as_app python3 -m venv .venv
 fi
 
 echo "[INSTALL] Installing Python project dependencies..."
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-deactivate
+as_app "${APP_DIR}/.venv/bin/python" -m pip install --upgrade pip
+as_app "${APP_DIR}/.venv/bin/python" -m pip install -r requirements.txt
 
 echo "[INSTALL] Installing Waveshare PyPI driver (optional)..."
 sudo pip3 install --break-system-packages waveshare-epaper || true
@@ -146,8 +180,10 @@ if command -v systemctl >/dev/null 2>&1; then
   echo "[INSTALL] Enabling service..."
   sudo systemctl enable "${SERVICE_NAME}"
 
-  echo "[INSTALL] Starting service..."
-  sudo systemctl start "${SERVICE_NAME}"
+  if [ "$UPDATE_ONLY" -eq 0 ]; then
+    echo "[INSTALL] Starting service..."
+    sudo systemctl start "${SERVICE_NAME}"
+  fi
 fi
 
 # -----------------------------------------------------------------------------
@@ -174,8 +210,10 @@ if [ -f "${WEBUI_SERVICE_TEMPLATE_PATH}" ]; then
     echo "[INSTALL] Enabling web UI service..."
     sudo systemctl enable "${WEBUI_SERVICE_NAME}"
 
-    echo "[INSTALL] Starting web UI service..."
-    sudo systemctl start "${WEBUI_SERVICE_NAME}"
+    if [ "$UPDATE_ONLY" -eq 0 ]; then
+      echo "[INSTALL] Starting web UI service..."
+      sudo systemctl start "${WEBUI_SERVICE_NAME}"
+    fi
   fi
 else
   echo "[INSTALL] WARNING: Web UI service template not found at ${WEBUI_SERVICE_TEMPLATE_PATH}. Skipping web UI service setup."
@@ -193,6 +231,13 @@ printf '%s ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart dumb-smart-display, /u
   "${APP_USER}" | sudo tee "${SUDOERS_FILE}" > /dev/null
 sudo chmod 440 "${SUDOERS_FILE}"
 echo "[INSTALL] sudoers rule written to ${SUDOERS_FILE}."
+
+# A restricted web UI can resume a pending update after this script was run
+# manually over SSH. Record only a fully completed system install, as the app
+# account, and only for this checkout's exact revision.
+installed_revision="$(as_app git rev-parse HEAD)"
+as_app mkdir -p "${APP_DIR}/config"
+printf '%s\n' "$installed_revision" | as_app tee "${APP_DIR}/config/.system-install-revision" > /dev/null
 
 # -----------------------------------------------------------------------------
 # 7. Print access info

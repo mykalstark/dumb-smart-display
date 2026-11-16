@@ -109,8 +109,6 @@ class Module:
                         seconds = int(num or 0)
                         num = ""
                 minutes_total = hours * 60 + minutes + (1 if seconds else 0)
-                if assume_hours_if_small and minutes_total <= 12:
-                    minutes_total *= 60
                 return minutes_total
 
             # Formats like "45M", "1H 15M", "45 min"
@@ -124,8 +122,6 @@ class Module:
                     total_minutes += int(num) * 60
                 else:
                     total_minutes += int(num)
-            if assume_hours_if_small and total_minutes and total_minutes <= 12:
-                total_minutes *= 60
             return total_minutes or None
 
         return None

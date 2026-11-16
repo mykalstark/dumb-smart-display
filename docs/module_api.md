@@ -8,17 +8,19 @@ Each module should expose a `Module` class that follows the [`DisplayModule` pro
 
 - **name**: Human-readable identifier used for navigation and logs.
 - **`__init__(config, fonts)`**: Constructor receives a module-specific `config` mapping and a shared `fonts` dictionary.
-- **`render(width, height, **kwargs) -> PIL.Image.Image`**: Produce the frame for the current cycle. The display driver supplies the `width` and `height`.
+- **`render(width, height, **kwargs) -> PIL.Image.Image`**: Produce the frame for the current cycle. These are logical canvas dimensions; portrait orientation swaps the panel's physical width and height. The driver rotates the finished frame.
 - **`tick() -> None`**: Perform background or periodic work (e.g., refreshing cached data). This is called for all modules, not just the active one.
 - **`handle_button(event: str) -> None`**: React to logical button events (`"prev"`, `"next"`, or `"action"`).
 
 ### Optional hooks
 
+- **`handle_navigation(event: str) -> bool`**: Handle a left/right tap (`"back"` or `"next"`; `"prev"` is also accepted). Return `True` after paging through content; return `False` to let the manager switch modules. Modules without the hook navigate between screens as before. Holding a left/right button for one second always switches modules, and does not also send a tap. Automatic cycling still switches modules.
+- **`force_refresh() -> None`**: Refresh data immediately, bypassing the normal polling interval. Without this hook, the middle button calls `handle_button("refresh")`, then `tick()` for compatibility with older modules.
 - **`is_empty() -> bool`**: Report that there is no displayable content. This must be a fast check of cached data, with no fetching. Return `False` before data is known or when a fetch fails, so diagnostics stay visible. With `modules.settings.<name>.hide_when_empty: true`, the manager skips empty modules during automatic and button navigation. Hidden modules still receive `tick()` calls and return when content appears. Modules without this hook stay visible.
 - **`refresh_interval() -> Optional[int]`**: Hint (in seconds) for how often the module would like to refresh. Return `None` to defer to the default cadence.
 - **`supported_layouts() -> Sequence[LayoutPreset]`**: Advertise the layout variants that the module knows how to render. If not implemented, consumers should assume only the `"full"` preset is available.
 
-If you prefer not to reimplement optional hooks, inherit from `BaseDisplayModule` to get default implementations for `is_empty` (always `False`), `refresh_interval`, and `supported_layouts`.
+If you prefer not to reimplement optional hooks, inherit from `BaseDisplayModule` to get default implementations for `is_empty` and `handle_navigation` (both always `False`), `refresh_interval`, and `supported_layouts`.
 
 ## Layout presets
 
@@ -92,11 +94,11 @@ All modules live in `app/modules/`. Enable them by adding their name to `modules
 ### `calendar_ics`
 **File:** `app/modules/calendar_ics.py`
 **Purpose:** Today's and tomorrow's events from any iCal/ICS URL (Google Calendar, Apple Calendar, Outlook, Nextcloud, etc.).
-**Dependencies:** `icalendar>=5.0`, `python-dateutil>=2.8`
+**Dependencies:** `icalendar>=5.0`, `recurring-ical-events>=3.3,<4`, `python-dateutil>=2.8`
 **Required config:** `ics_url` — your private iCal link (see config example for where to find it in each app)
 **Notes:**
 - `webcal://` URLs are automatically rewritten to `https://`
-- Recurring events (RRULE) are expanded correctly
+- Recurrence rules, extra dates, exclusions, and moved or cancelled instances are applied
 - All-day events show with a bullet; timed events show their start time
 
 ---
@@ -104,9 +106,9 @@ All modules live in `app/modules/`. Enable them by adding their name to `modules
 ### `rss_feed`
 **File:** `app/modules/rss_feed.py`
 **Purpose:** Latest headlines from any RSS or Atom feed. Defaults to Good News Network.
-**Dependencies:** `feedparser>=6.0`
+**Dependencies:** `feedparser>=6.0`, `requests>=2.28`
 **Required config:** `feed_url`
-**Button behaviour:** `next` / `back` pages through headlines; `refresh` forces a re-fetch.
+**Button behaviour:** Tap left/right to page through headlines; hold for one second to switch modules. With only one page, taps switch modules. The middle button forces a re-fetch.
 
 ---
 
@@ -115,7 +117,7 @@ All modules live in `app/modules/`. Enable them by adding their name to `modules
 **Purpose:** Days remaining until one or more named events. No network required — pure date math.
 **Dependencies:** none extra
 **Required config:** At least one entry under `events` with `name` and `date` (YYYY-MM-DD).
-**Button behaviour:** `next` / `back` cycles between multiple events.
+**Button behaviour:** Tap left/right to cycle between multiple events; hold for one second to switch modules. With only one event, taps switch modules.
 
 ---
 

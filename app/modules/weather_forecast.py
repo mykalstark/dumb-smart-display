@@ -370,9 +370,12 @@ class Module(BaseDisplayModule):
             return
         self._fetch()
 
+    def force_refresh(self) -> None:
+        self._fetch()
+
     def handle_button(self, event: str) -> None:
         if event == "refresh":
-            self._fetch()
+            self.force_refresh()
 
     def supported_layouts(self) -> Sequence[LayoutPreset]:
         return (DEFAULT_LAYOUTS[0],)

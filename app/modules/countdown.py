@@ -72,6 +72,12 @@ class Module(BaseDisplayModule):
         elif event in {"back", "prev"}:
             self._active_index = (self._active_index - 1) % len(visible)
 
+    def handle_navigation(self, event: str) -> bool:
+        if event not in {"next", "back", "prev"} or len(self._visible_events()) < 2:
+            return False
+        self.handle_button(event)
+        return True
+
     def refresh_interval(self) -> Optional[int]:
         return 60
 

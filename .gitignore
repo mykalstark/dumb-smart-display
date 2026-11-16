@@ -1,4 +1,6 @@
 config/config.yml
+config/.update-state.yml
+config/.system-install-revision
 .venv/
 __pycache__/
 *.pyc

@@ -87,6 +87,7 @@
 
 (function () {
   var _source = null;
+  var _statusTimer = null;
   var previousFocus;
 
   /* Stage metadata -------------------------------------------------- */
@@ -157,6 +158,7 @@
     elModal.querySelector('.upd-box').focus();
 
     /* Open SSE stream */
+    clearTimeout(_statusTimer);
     if (_source) { _source.close(); }
     _source = new EventSource(elModal.dataset.streamUrl);
 
@@ -185,6 +187,56 @@
       setTimeout(function () { location.reload(); }, 12000);
     });
 
+    /* Installation is complete; verify the new process before claiming success. */
+    _source.addEventListener('restarting', function (event) {
+      _source.close();
+      var previousInstance = event.data;
+      var deadline = Date.now() + 60000;
+      elStageLabel.textContent = 'Waiting for the control panel to restart…';
+      function checkRestart() {
+        fetch('/update/status', { cache: 'no-store' }).then(function (response) {
+          if (response.redirected) {
+            showResult('Control panel is reachable. Sign in again to continue.', true);
+            location.href = response.url;
+            return null;
+          }
+          if (!response.ok) throw new Error('Control panel unavailable');
+          return response.json();
+        }).then(function (status) {
+          if (!status) return;
+          if (status.phase === 'failed') {
+            appendLog(status.error);
+            elBar.className = 'upd-bar err';
+            elStageLabel.textContent = 'Restart failed';
+            showResult('The restart failed. Check the log above, then retry the update.', false);
+            elCloseRow.hidden = false;
+            return;
+          }
+          if (status.instance !== previousInstance && status.phase === 'complete') {
+            setBar('100%', 'complete');
+            setPips(5);
+            elStageLabel.textContent = 'Complete';
+            document.getElementById('upd-title').textContent = 'Update complete';
+            showResult('✓ Both services are available. Reloading…', true);
+            location.reload();
+          } else {
+            retry();
+          }
+        }).catch(retry);
+      }
+      function retry() {
+        if (Date.now() >= deadline) {
+          elBar.className = 'upd-bar err';
+          elStageLabel.textContent = 'Restart could not be confirmed';
+          showResult('The restart could not be confirmed. Check service logs, then retry the update.', false);
+          elCloseRow.hidden = false;
+          return;
+        }
+        _statusTimer = setTimeout(checkRestart, 2000);
+      }
+      _statusTimer = setTimeout(checkRestart, 4000);
+    });
+
     /* Already up to date */
     _source.addEventListener('uptodate', function () {
       _source.close();
@@ -197,8 +249,9 @@
     });
 
     /* Failure */
-    _source.addEventListener('fail', function () {
+    _source.addEventListener('fail', function (event) {
       _source.close();
+      if (event.data) appendLog(event.data);
       elBar.className = 'upd-bar err';
       setPips(elPips.filter(function(p){ return p.classList.contains('complete') || p.classList.contains('active'); }).length - 1, 'err');
       elStageLabel.textContent = 'Failed';
@@ -230,6 +283,7 @@
 
   /* Close ------------------------------------------------------------ */
   window.closeUpdateModal = function () {
+    clearTimeout(_statusTimer);
     if (_source) { _source.close(); _source = null; }
     elModal.hidden = true;
     document.body.style.overflow = '';

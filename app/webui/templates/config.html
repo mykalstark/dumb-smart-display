@@ -100,7 +100,7 @@
       {{ field.label }}
       {% if field.required is defined and field.required %}<span class="req" aria-hidden="true">*</span>{% endif %}
     </label>
-    <input type="number" {% if field.key in ['latitude', 'longitude'] %}step="any"{% endif %} id="{{ fid }}" {% if field.help is defined %}aria-describedby="{{ fid }}-help"{% endif %} name="{{ fname }}"
+    <input type="number" {% if field.step is defined %}step="{{ field.step }}"{% endif %} id="{{ fid }}" {% if field.help is defined %}aria-describedby="{{ fid }}-help"{% endif %} name="{{ fname }}"
            value="{{ value if value is not none else '' }}"
            placeholder="{{ field.placeholder if field.placeholder is defined else '' }}"
            {% if field.min is defined %}min="{{ field.min }}"{% endif %}

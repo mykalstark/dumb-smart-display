@@ -18,10 +18,12 @@ Field descriptor keys:
     required  Bool — rendered with a required indicator (default False)
     options   List of {"value", "label"} dicts — only used for "select" type
     min/max   Optional numeric bounds for "number" type
+    step      "any" for decimal numbers; other number fields require integers
     placeholder  Optional placeholder text
 """
 from __future__ import annotations
 
+from threading import TIMEOUT_MAX
 from typing import Any, Dict, List
 
 FieldDef = Dict[str, Any]
@@ -39,6 +41,7 @@ LOCATION_SCHEMA: SectionSchema = {
             "key": "latitude",
             "label": "Latitude",
             "type": "number",
+            "step": "any",
             "help": "Decimal degrees, e.g. 40.7128",
             "required": True,
             "placeholder": "40.513217",
@@ -49,6 +52,7 @@ LOCATION_SCHEMA: SectionSchema = {
             "key": "longitude",
             "label": "Longitude",
             "type": "number",
+            "step": "any",
             "help": "Decimal degrees, e.g. -74.0060",
             "required": True,
             "placeholder": "-112.321445",
@@ -97,6 +101,7 @@ HARDWARE_SCHEMA: SectionSchema = {
             "type": "number",
             "help": "How long each module is shown before advancing to the next.",
             "min": 5,
+            "max": int(TIMEOUT_MAX),
             "placeholder": "30",
         },
         {

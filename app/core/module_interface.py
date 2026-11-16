@@ -18,6 +18,12 @@ Required hooks
 Optional hooks
 ==============
 
+- ``handle_navigation(event)`` -> ``bool``: consume a left/right tap to page
+  through content, returning ``True``. Return ``False`` to switch modules.
+  Holds always switch modules, and automatic cycling is unchanged.
+- ``force_refresh()`` -> ``None``: fetch current data immediately. Without this
+  hook, the refresh button is forwarded to ``handle_button("refresh")`` and
+  followed by ``tick()`` for compatibility with older modules.
 - ``is_empty()`` -> ``bool``: report whether there is no displayable content.
   Return ``False`` for unknown data or errors so diagnostics remain visible.
   The manager skips empty modules only when their ``hide_when_empty`` setting
@@ -181,6 +187,9 @@ class DisplayModule(Protocol):
     def handle_button(self, event: str) -> None:
         ...
 
+    def handle_navigation(self, event: str) -> bool:
+        ...
+
     def refresh_interval(self) -> Optional[int]:
         ...
 
@@ -199,6 +208,9 @@ class BaseDisplayModule:
     """
 
     name: str = "unnamed"
+
+    def handle_navigation(self, event: str) -> bool:
+        return False
 
     def is_empty(self) -> bool:
         return False
