@@ -151,16 +151,27 @@ class ModuleManager:
         if callable(refresher):
             refresher()
         else:
+            handler = getattr(module, "handle_button", None)
+            if callable(handler):
+                handler("refresh")
+            # Preserve periodic work for older modules whose button handler
+            # does not implement refresh. Built-ins use force_refresh above.
             module.tick()
 
         return module
 
     def route_button_event(self, event: str) -> Optional[DisplayModule]:
-        """Handle a logical button event (back/refresh/next)."""
-        if event == "next":
+        """Route taps to optional paging hooks and holds to module navigation."""
+        if event == "module_next":
             return self.activate_next()
-        if event in {"prev", "back"}:
+        if event == "module_back":
             return self.prev_module()
+        if event in {"next", "prev", "back"}:
+            module = self.current_module()
+            navigator = getattr(module, "handle_navigation", None)
+            if callable(navigator) and navigator(event):
+                return module
+            return self.activate_next() if event == "next" else self.prev_module()
         if event == "refresh":
             return self.refresh_current()
         if event == "action":

@@ -170,6 +170,12 @@ Designed for the **Raspberry Pi Zero 2 W**, but runs on any Pi with GPIO headers
 
 All pins are configurable in `config.yml`.
 
+**Button controls:** Tap left/right to page through RSS headlines or Countdown
+events. Hold either button for one second to switch modules. Screens without
+multiple pages or events switch modules on a tap as well. The middle button
+refreshes the current screen's data immediately. Automatic screen cycling is
+unchanged.
+
 ---
 
 ## Installation
@@ -412,12 +418,26 @@ Open the Web UI → **Settings** → **Software** → **Update & restart**.
 A progress modal streams live output as the updater:
 1. Fetches and lists new commits from GitHub
 2. Pulls the latest code (`git pull --ff-only origin main`)
-3. Runs the install script to pick up any new system or Python dependencies
-4. Restarts both services and auto-refreshes the page
+3. Installs dependencies before restarting either service
+4. Restarts the display, checks that it is active, then requests a control-panel restart
+5. Confirms the new control-panel process is available and reloads the page (you may need to sign in again)
+
+If installation fails, the services are not restarted and the update remains pending.
+Correct the reported problem and select **Update & restart** again; installation is
+retried even if Git already has the latest commit. Restart failures also remain
+pending until the services can be confirmed available.
+
+The generated sudo rule permits service restarts only. With that limited policy,
+Python-only updates still work when the system installer and service templates
+have not changed. If an update needs system installation, the UI will ask you to
+run `./scripts/install.sh` over SSH, then retry the web update. A successful manual
+install records its revision so the retry can continue. Updates preserve the
+non-root application account and install project dependencies as that account.
 
 ### Via SSH
 ```bash
 git pull
+./scripts/install.sh
 sudo systemctl restart dumb-smart-display
 sudo systemctl restart dumb-smart-display-webui
 ```
@@ -497,6 +517,17 @@ See [`docs/module_api.md`](docs/module_api.md) for the full API reference and la
 ---
 
 ## Troubleshooting
+
+**Modules missing data:** Run this from the project directory on the device:
+```bash
+.venv/bin/python scripts/check_modules.py --all
+```
+This checks configuration, installed dependencies, service requests, and rendering
+for each module. It reports setup errors, HTTP status codes, and empty content
+without printing credentials, private URLs, calendar titles, or task contents.
+The `--all` option also checks disabled built-in modules; omit it to check only
+enabled modules. Device time is included because Calendar and TickTick show today
+and tomorrow according to that device's clock/timezone.
 
 **Screen not updating:**
 ```bash

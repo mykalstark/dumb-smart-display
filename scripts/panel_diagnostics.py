@@ -200,8 +200,8 @@ def main() -> None:
         config.setdefault("hardware", {})["spi_hz"] = args.spi_hz
 
     display = build_display(config, force_simulate=args.simulate)
-    width = display.driver.width
-    height = display.driver.height
+    width = display.width
+    height = display.height
     supports_four_gray = display.supports_four_gray()
 
     photo_path = args.photo or _photo_path_from_config(args.config)

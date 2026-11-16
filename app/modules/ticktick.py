@@ -87,6 +87,10 @@ class Module(BaseDisplayModule):
 
         self.last_fetch = now
 
+    def force_refresh(self) -> None:
+        self.last_fetch = None
+        self.tick()
+
     def handle_button(self, event: str) -> None:
         # No interactive actions yet.
         return

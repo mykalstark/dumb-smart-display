@@ -327,7 +327,7 @@ def _render_after_hours(display: "Display", config: Dict[str, Any], fonts: Dict[
     photo_name = ah_cfg.get("photo", "")
     requested_mode = _normalize_after_hours_render_mode(ah_cfg.get("render_mode"))
     render_mode = requested_mode
-    w, h = display.driver.width, display.driver.height
+    w, h = display.width, display.height
     image = None
 
     if photo_name:
@@ -417,8 +417,8 @@ def main() -> None:
             return
 
         try:
-            w = display.driver.width
-            h = display.driver.height
+            w = display.width
+            h = display.height
             content = module.render(width=w, height=h)
             
             # Render with the force flag if set

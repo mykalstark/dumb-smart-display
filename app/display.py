@@ -8,6 +8,11 @@ from PIL import Image, ImageDraw, ImageFont
 from app.core.theme import draw_message
 
 
+def _logical_size(width: int, height: int, rotation: int) -> tuple[int, int]:
+    """Return the drawing canvas size for a panel's physical orientation."""
+    return (height, width) if rotation % 180 == 90 else (width, height)
+
+
 class DisplayDriver(Protocol):
     width: int
     height: int
@@ -168,7 +173,7 @@ class HardwareDisplayDriver:
             print(f"[Display] Failed to override SPI clock: {exc}")
 
     def _prepare_image(self, image: Image.Image) -> Image.Image:
-        target_size = (self.width, self.height)
+        target_size = _logical_size(self.width, self.height, self.rotation)
 
         # Preserve existing 1-bit content when possible; only resample when size changes.
         if image.size != target_size:
@@ -180,7 +185,9 @@ class HardwareDisplayDriver:
         # Rotate if needed
         if self.rotation:
             rotate_resample = Image.NEAREST if img.mode == "1" else Image.BICUBIC
-            img = img.rotate(self.rotation, expand=False, resample=rotate_resample)
+            img = img.rotate(
+                self.rotation, expand=self.rotation % 180 == 90, resample=rotate_resample
+            )
 
         # If callers already prepared a 1-bit image (e.g. after-hours photo dithering),
         # pass it through unchanged so panel-ready dithering is not destroyed.
@@ -191,7 +198,7 @@ class HardwareDisplayDriver:
         return img.convert("L").point(lambda x: 0 if x < 128 else 255, "1")
 
     def _prepare_four_gray_image(self, image: Image.Image) -> Image.Image:
-        target_size = (self.width, self.height)
+        target_size = _logical_size(self.width, self.height, self.rotation)
 
         if image.size != target_size:
             img = image.resize(target_size, resample=Image.LANCZOS)
@@ -199,12 +206,15 @@ class HardwareDisplayDriver:
             img = image.copy()
 
         if self.rotation:
-            img = img.rotate(self.rotation, expand=False, resample=Image.BICUBIC)
+            img = img.rotate(
+                self.rotation, expand=self.rotation % 180 == 90, resample=Image.BICUBIC
+            )
 
         return img.convert("L")
 
     def render_text(self, text: str) -> None:
-        image = Image.new("1", (self.width, self.height), 255)
+        size = _logical_size(self.width, self.height, self.rotation)
+        image = Image.new("1", size, 255)
         draw = ImageDraw.Draw(image)
 
         try:
@@ -294,6 +304,16 @@ class Display:
         self.spi_hz = spi_hz
         self.driver: DisplayDriver = driver or self._select_driver()
 
+    @property
+    def width(self) -> int:
+        """Logical canvas width; driver dimensions describe the physical panel."""
+        return _logical_size(self.driver.width, self.driver.height, self.rotation)[0]
+
+    @property
+    def height(self) -> int:
+        """Logical canvas height, including quarter-turn portrait orientation."""
+        return _logical_size(self.driver.width, self.driver.height, self.rotation)[1]
+
     def _select_driver(self) -> DisplayDriver:
         if self.simulate:
             return SimulatorDisplayDriver(rotation=self.rotation)
@@ -336,8 +356,7 @@ class Display:
         return bool(callable(checker) and checker())
 
     def _render_text_image(self, text: str) -> Image.Image:
-        width = getattr(self.driver, "width", 800)
-        height = getattr(self.driver, "height", 480)
+        width, height = self.width, self.height
 
         image = Image.new("1", (width, height), 255)
         draw = ImageDraw.Draw(image)

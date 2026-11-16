@@ -5,6 +5,7 @@ from typing import Callable, Optional
 BTN1 = 17
 BTN2 = 27
 BTN3 = 22
+HOLD_SECONDS = 1.0
 
 
 def log(msg: str) -> None:
@@ -41,19 +42,40 @@ def init_buttons(
     if Button is None:
         return
 
-    b1 = Button(BTN1, pull_up=True, bounce_time=0.05)
+    b1 = Button(BTN1, pull_up=True, bounce_time=0.05, hold_time=HOLD_SECONDS)
     b2 = Button(BTN2, pull_up=True, bounce_time=0.05)
-    b3 = Button(BTN3, pull_up=True, bounce_time=0.05)
+    b3 = Button(BTN3, pull_up=True, bounce_time=0.05, hold_time=HOLD_SECONDS)
 
     def _dispatch(event: str) -> None:
         log(f"Button event: {event}")
         if on_event:
             on_event(event)
 
-    # Physical layout (left-to-right): back, refresh, next
-    b1.when_pressed = lambda: _dispatch("back")
+    def _navigation_button(button, tap_event: str, hold_event: str) -> None:
+        held = False
+
+        def pressed() -> None:
+            nonlocal held
+            held = False
+
+        def on_hold() -> None:
+            nonlocal held
+            held = True
+            _dispatch(hold_event)
+
+        def released() -> None:
+            # Defer taps until release so a hold never pages before switching.
+            if not held:
+                _dispatch(tap_event)
+
+        button.when_pressed = pressed
+        button.when_held = on_hold
+        button.when_released = released
+
+    # Taps page within RSS/Countdown; holds always switch modules.
+    _navigation_button(b1, "back", "module_back")
     b2.when_pressed = lambda: _dispatch("refresh")
-    b3.when_pressed = lambda: _dispatch("next")
+    _navigation_button(b3, "next", "module_next")
 
     # Store references to prevent garbage collection, which would drop callbacks
     global _BUTTONS

@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence
 
+import requests
 from PIL import Image, ImageDraw
 
 from app.core.module_interface import BaseDisplayModule, DEFAULT_LAYOUTS, LayoutPreset
@@ -14,6 +15,7 @@ from app.core.theme import (
 )
 
 log = logging.getLogger(__name__)
+_REQUEST_TIMEOUT = (5, 10)  # Connection and read timeouts, in seconds.
 
 try:
     import feedparser  # type: ignore
@@ -60,8 +62,7 @@ class Module(BaseDisplayModule):
 
     def handle_button(self, event: str) -> None:
         if event == "refresh":
-            self._fetch()
-            self._page = 0
+            self.force_refresh()
             return
 
         total_pages = self._total_pages()
@@ -73,6 +74,16 @@ class Module(BaseDisplayModule):
         elif event in {"back", "prev"}:
             self._page = (self._page - 1) % total_pages
 
+    def force_refresh(self) -> None:
+        self._fetch()
+        self._page = 0
+
+    def handle_navigation(self, event: str) -> bool:
+        if event not in {"next", "back", "prev"} or self._error or self._total_pages() < 2:
+            return False
+        self.handle_button(event)
+        return True
+
     def supported_layouts(self) -> Sequence[LayoutPreset]:
         return (DEFAULT_LAYOUTS[0],)
 
@@ -80,6 +91,8 @@ class Module(BaseDisplayModule):
     # Data fetching
     # ------------------------------------------------------------------
     def _fetch(self) -> None:
+        # Failed attempts must obey the same cadence as successful requests.
+        self._last_fetch = datetime.now()
         if not _FEEDPARSER_AVAILABLE:
             self._error = "feedparser not installed"
             return
@@ -88,7 +101,9 @@ class Module(BaseDisplayModule):
             return
 
         try:
-            parsed = feedparser.parse(self.feed_url)
+            response = requests.get(self.feed_url, timeout=_REQUEST_TIMEOUT)
+            response.raise_for_status()
+            parsed = feedparser.parse(response.content, response_headers=dict(response.headers))
             if parsed.bozo and not parsed.entries:
                 self._error = f"Feed error: {parsed.bozo_exception}"
                 return
@@ -108,8 +123,6 @@ class Module(BaseDisplayModule):
         except Exception as exc:
             log.warning("RSS fetch failed for %s: %s", self.feed_url, exc)
             self._error = "Feed unavailable"
-
-        self._last_fetch = datetime.now()
 
     # ------------------------------------------------------------------
     # Render helpers

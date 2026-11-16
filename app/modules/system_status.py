@@ -117,6 +117,9 @@ class Module(BaseDisplayModule):
             return
         self._collect_stats()
 
+    def force_refresh(self) -> None:
+        self._collect_stats()
+
     def handle_button(self, event: str) -> None:
         pass  # Display-only module
 

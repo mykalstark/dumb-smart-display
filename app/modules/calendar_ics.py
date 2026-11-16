@@ -19,12 +19,12 @@ log = logging.getLogger(__name__)
 
 try:
     import icalendar  # type: ignore
-    from dateutil import rrule as dateutil_rrule  # type: ignore
+    import recurring_ical_events
     from dateutil.tz import tzlocal  # type: ignore
     _ICAL_AVAILABLE = True
 except ImportError:
     _ICAL_AVAILABLE = False
-    log.warning("icalendar or python-dateutil not installed. calendar_ics module disabled.")
+    log.warning("Calendar dependencies not installed. calendar_ics module disabled.")
 
 
 # A normalized event suitable for display
@@ -75,13 +75,28 @@ def _parse_ics(content: bytes, target_dates: Tuple[date, date]) -> List[_Event]:
     events: List[_Event] = []
     start_target, end_target = target_dates
 
-    # Build a window: midnight of start_target → end of end_target (local tz)
+    # Cancellation messages may omit DTSTART. Give the recurrence engine the
+    # cancelled instance's original start while retaining its cancelled status.
+    masters = {str(component.get("UID")): component["DTSTART"]
+               for component in cal.walk("VEVENT")
+               if "DTSTART" in component and "RECURRENCE-ID" not in component}
+    for component in cal.walk("VEVENT"):
+        if "DTSTART" not in component and str(component.get("STATUS", "")).upper() == "CANCELLED":
+            original_start = component.get("RECURRENCE-ID") or masters.get(str(component.get("UID")))
+            if original_start is not None:
+                component.add("DTSTART", original_start.dt)
+    # As before, incomplete events without a start date do not hide valid ones.
+    cal.subcomponents = [component for component in cal.subcomponents
+                         if component.name != "VEVENT" or "DTSTART" in component]
+
+    # Expand the complete recurrence set, including exclusions and moved or
+    # cancelled instances. The library preserves DATE-only recurrence rules.
     local_tz = tzlocal()
     window_start = datetime.combine(start_target, time.min).replace(tzinfo=local_tz)
-    window_end = datetime.combine(end_target, time.max).replace(tzinfo=local_tz)
+    window_end = datetime.combine(end_target + timedelta(days=1), time.min).replace(tzinfo=local_tz)
 
-    for component in cal.walk():
-        if component.name != "VEVENT":
+    for component in recurring_ical_events.of(cal, skip_bad_series=True).between(window_start, window_end):
+        if str(component.get("STATUS", "")).upper() == "CANCELLED":
             continue
 
         dtstart_prop = component.get("DTSTART")
@@ -92,41 +107,14 @@ def _parse_ics(content: bytes, target_dates: Tuple[date, date]) -> List[_Event]:
         title_prop = component.get("SUMMARY")
         title = str(title_prop) if title_prop else "(No title)"
 
-        rrule_prop = component.get("RRULE")
-
-        if rrule_prop:
-            # Recurring event — expand within the window
-            try:
-                rrule_str = rrule_prop.to_ical().decode()
-                if isinstance(dtstart, datetime):
-                    dtstart_aware = dtstart if dtstart.tzinfo else dtstart.replace(tzinfo=local_tz)
-                else:
-                    # date-only start — treat as midnight local
-                    dtstart_aware = datetime.combine(dtstart, time.min).replace(tzinfo=local_tz)
-
-                rule = dateutil_rrule.rrulestr(
-                    rrule_str, dtstart=dtstart_aware, ignoretz=False
-                )
-                occurrences = rule.between(window_start, window_end, inc=True)
-                for occ in occurrences:
-                    ev_date = occ.astimezone(local_tz).date()
-                    ev_time = occ.astimezone(local_tz).time().replace(tzinfo=None)
-                    is_all_day = isinstance(dtstart, date) and not isinstance(dtstart, datetime)
-                    if is_all_day:
-                        ev_time = None
-                    events.append(_Event(title, ev_date, ev_time, is_all_day))
-            except Exception as exc:
-                log.debug("Failed to expand RRULE for '%s': %s", title, exc)
-        else:
-            # Non-recurring event
-            ev_date = _to_local_date(dtstart)
-            if ev_date is None:
-                continue
-            if ev_date < start_target or ev_date > end_target:
-                continue
-            is_all_day = isinstance(dtstart, date) and not isinstance(dtstart, datetime)
-            ev_time = None if is_all_day else _to_local_time(dtstart)
-            events.append(_Event(title, ev_date, ev_time, is_all_day))
+        # The query also returns events overlapping the window; retain the
+        # module's existing behavior of listing each event on its start date.
+        ev_date = _to_local_date(dtstart)
+        if ev_date is None or not start_target <= ev_date <= end_target:
+            continue
+        is_all_day = isinstance(dtstart, date) and not isinstance(dtstart, datetime)
+        ev_time = None if is_all_day else _to_local_time(dtstart)
+        events.append(_Event(title, ev_date, ev_time, is_all_day))
 
     return events
 
@@ -172,7 +160,10 @@ class Module(BaseDisplayModule):
 
     def handle_button(self, event: str) -> None:
         if event == "refresh":
-            self._fetch()
+            self.force_refresh()
+
+    def force_refresh(self) -> None:
+        self._fetch()
 
     def supported_layouts(self) -> Sequence[LayoutPreset]:
         return (DEFAULT_LAYOUTS[0],)
@@ -184,7 +175,7 @@ class Module(BaseDisplayModule):
         self._last_fetch = datetime.now()
 
         if not _ICAL_AVAILABLE:
-            self._error = "icalendar not installed"
+            self._error = "Calendar dependencies not installed"
             return
         if not self.ics_url:
             self._error = "No ics_url configured"

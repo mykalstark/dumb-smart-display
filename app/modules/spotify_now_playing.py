@@ -104,6 +104,9 @@ class Module(BaseDisplayModule):
             return
         self._fetch_now_playing()
 
+    def force_refresh(self) -> None:
+        self._fetch_now_playing()
+
     def handle_button(self, event: str) -> None:
         pass  # Display-only
 
